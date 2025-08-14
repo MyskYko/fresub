@@ -1,5 +1,5 @@
 #include <iostream>
-#include "aig.hpp"
+#include "fresub_aig.hpp"
 
 using namespace fresub;
 

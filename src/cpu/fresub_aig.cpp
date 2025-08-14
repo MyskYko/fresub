@@ -4,6 +4,7 @@
 #include <queue>
 #include <algorithm>
 #include <cassert>
+#include <unordered_set>
 
 namespace fresub {
 
@@ -199,7 +200,7 @@ int AIG::create_and(int fanin0, int fanin1) {
     nodes[lit2var(fanin1)].fanouts.push_back(new_id);
     
     num_nodes++;
-    return new_id;
+    return var2lit(new_id);
 }
 
 void AIG::remove_node(int node_id) {
@@ -216,6 +217,65 @@ void AIG::remove_node(int node_id) {
     
     auto& fo1 = nodes[fanin1_var].fanouts;
     fo1.erase(std::remove(fo1.begin(), fo1.end(), node_id), fo1.end());
+}
+
+void AIG::remove_mffc(int node_id) {
+    if (node_id <= num_pis || node_id >= num_nodes) return;
+    
+    std::vector<int> mffc;
+    std::unordered_set<int> visited;
+    std::queue<int> to_process;
+    
+    // Start with the target node
+    to_process.push(node_id);
+    visited.insert(node_id);
+    
+    while (!to_process.empty()) {
+        int current = to_process.front();
+        to_process.pop();
+        
+        if (current <= num_pis) {
+            continue; // Don't include PIs in MFFC
+        }
+        
+        mffc.push_back(current);
+        
+        // Check if this node has fanout > 1 (not in MFFC except for original target)
+        if (current != node_id && nodes[current].fanouts.size() > 1) {
+            continue;
+        }
+        
+        // Add fanins to processing queue if they're in the fanout-free cone
+        int fanin0_node = lit2var(nodes[current].fanin0);
+        int fanin1_node = lit2var(nodes[current].fanin1);
+        
+        if (fanin0_node > num_pis && visited.find(fanin0_node) == visited.end()) {
+            // Check if fanin0 has only this node as fanout
+            bool single_fanout = (nodes[fanin0_node].fanouts.size() == 1);
+            if (single_fanout) {
+                to_process.push(fanin0_node);
+                visited.insert(fanin0_node);
+            }
+        }
+        
+        if (fanin1_node > num_pis && visited.find(fanin1_node) == visited.end()) {
+            // Check if fanin1 has only this node as fanout
+            bool single_fanout = (nodes[fanin1_node].fanouts.size() == 1);
+            if (single_fanout) {
+                to_process.push(fanin1_node);
+                visited.insert(fanin1_node);
+            }
+        }
+    }
+    
+    // Remove all nodes in MFFC
+    std::cout << "  Removing MFFC for node " << node_id << ": {";
+    for (size_t i = 0; i < mffc.size(); i++) {
+        if (i > 0) std::cout << ", ";
+        std::cout << mffc[i];
+        remove_node(mffc[i]);
+    }
+    std::cout << "}\n";
 }
 
 void AIG::replace_node(int old_node, int new_node) {
@@ -240,7 +300,7 @@ void AIG::replace_node(int old_node, int new_node) {
         }
     }
     
-    remove_node(old_node);
+    remove_mffc(old_node);
 }
 
 void AIG::simulate(const std::vector<uint64_t>& pi_values) {

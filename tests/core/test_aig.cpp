@@ -1,8 +1,8 @@
-#include "../include/aig.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \
@@ -31,7 +31,7 @@ void test_aig_basic() {
     
     // Node 0: constant
     // Node 1: PI 1
-    // Node 2: PI 2
+    // Node 2: PI 2  
     // Node 3: AND(1, 2)
     aig.nodes[3].fanin0 = AIG::var2lit(1);
     aig.nodes[3].fanin1 = AIG::var2lit(2);
@@ -58,4 +58,19 @@ void test_aig_basic() {
     ASSERT(aig.create_and(1, AIG::var2lit(1)) == AIG::var2lit(1));  // 1 AND x = x
     
     std::cout << "  AIG basic tests completed\n";
+}
+
+int main() {
+    std::cout << "=== AIG Basic Operations Test ===\n\n";
+    
+    test_aig_basic();
+    
+    std::cout << "\nTest Results: ";
+    if (passed_tests == total_tests) {
+        std::cout << "PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        return 0;
+    } else {
+        std::cout << "FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        return 1;
+    }
 }

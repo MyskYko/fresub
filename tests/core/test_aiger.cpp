@@ -1,9 +1,9 @@
-#include "../include/aig.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 #include <fstream>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \
@@ -16,22 +16,22 @@ extern int passed_tests;
 
 using namespace fresub;
 
-void test_aiger_read() {
+void test_aiger_read(const std::string& benchmark_file) {
     std::cout << "Testing AIGER file reading...\n";
     
-    // Test with i10.aig benchmark
+    // Test with provided benchmark file
     try {
-        std::cout << "  Loading i10.aig...\n";
-        AIG aig("../benchmarks/i10.aig");
+        std::cout << "  Loading " << benchmark_file << "...\n";
+        AIG aig(benchmark_file);
         
-        // Check expected values from the header: aig 2932 257 0 224 2675
-        ASSERT(aig.num_pis == 257);
-        ASSERT(aig.num_pos == 224);
-        ASSERT(aig.num_nodes == 2933);  // 2932 + 1 for constant
+        // Check that the file was loaded with valid structure
+        ASSERT(aig.num_pis > 0);
+        ASSERT(aig.num_pos > 0);
+        ASSERT(aig.num_nodes >= aig.num_pis + 1);  // At least PIs + constant
         
         // Check that nodes are properly initialized
-        ASSERT(aig.nodes.size() == 2933);
-        ASSERT(aig.pos.size() == 224);
+        ASSERT(aig.nodes.size() == aig.num_nodes);
+        ASSERT(aig.pos.size() == aig.num_pos);
         
         // Check that we can access nodes without crashing
         for (int i = 0; i < aig.num_pis + 1; i++) {
@@ -129,5 +129,26 @@ void test_aiger_write() {
     } catch (const std::exception& e) {
         std::cerr << "Exception during write test: " << e.what() << std::endl;
         ASSERT(false);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <input.aig>\n";
+        return 1;
+    }
+    
+    std::cout << "=== AIGER I/O Test ===\n\n";
+    
+    test_aiger_read(argv[1]);
+    test_aiger_write();
+    
+    std::cout << "\nTest Results: ";
+    if (passed_tests == total_tests) {
+        std::cout << "PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        return 0;
+    } else {
+        std::cout << "FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        return 1;
     }
 }

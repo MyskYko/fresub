@@ -74,8 +74,12 @@ InsertionResult AIGInsertion::insert_synthesized_circuit(const Window& window,
     
     // Add selected non-input divisor nodes
     for (int idx : selected_divisors) {
-        if (idx >= 0 && idx < non_input_divisors.size()) {
-            all_input_nodes.push_back(non_input_divisors[idx]);
+        if (idx >= 0 && idx < window.divisors.size()) {
+            int divisor_node = window.divisors[idx];
+            // Only add if it's not a window input (to avoid double-counting)
+            if (window_input_set.find(divisor_node) == window_input_set.end()) {
+                all_input_nodes.push_back(divisor_node);
+            }
         } else {
             result.description = "Invalid divisor index: " + std::to_string(idx);
             return result;

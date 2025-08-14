@@ -1,5 +1,5 @@
 #include <iostream>
-#include "aig.hpp"
+#include "fresub_aig.hpp"
 #include "window.hpp"
 
 using namespace fresub;
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  Nodes: " << aig.num_nodes << "\n";
         
         std::cout << "Creating WindowExtractor...\n";
-        WindowExtractor extractor(aig, 6, 8);
+        WindowExtractor extractor(aig, 6);
         
         std::cout << "Extracting windows...\n";
         std::vector<Window> windows;

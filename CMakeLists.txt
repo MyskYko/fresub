@@ -21,7 +21,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Find required packages
 find_package(Threads REQUIRED)
 
-# Find exopt external library
+# Find exopt external library  
 find_library(EXOPT_LIB exopt_lib PATHS ${CMAKE_SOURCE_DIR}/../exopt/build)
 find_library(EXOPT_AIG_LIB aig PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/lib/aig)
 find_library(EXOPT_CADICAL_LIB cadical PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/lib/cadical)  
@@ -30,8 +30,8 @@ find_library(EXOPT_KISSAT_LIB kissat PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/li
 # Find exopt include directories
 find_path(EXOPT_INCLUDE_DIR synth.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/include)
 find_path(EXOPT_AIG_INCLUDE_DIR aig.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/aig)
-find_path(EXOPT_CADICAL_INCLUDE_DIR cadical.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/cadical/src)
 find_path(EXOPT_KISSAT_INCLUDE_DIR kissat.h PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/kissat/src)
+find_path(EXOPT_CADICAL_INCLUDE_DIR cadical.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/cadical/src)
 
 # Check if exopt was found
 if(NOT EXOPT_LIB OR NOT EXOPT_INCLUDE_DIR OR NOT EXOPT_AIG_INCLUDE_DIR)
@@ -42,12 +42,11 @@ endif()
 set(CPU_LIB_SOURCES
     src/cpu/fresub_aig.cpp
     src/cpu/window.cpp
-    src/cpu/resub.cpp
-    src/cpu/conflict.cpp
-    src/cpu/synthesis.cpp
+    src/cpu/feasibility.cpp
     src/cpu/synthesis_bridge.cpp
     src/cpu/aig_insertion.cpp
     src/cpu/aig_converter.cpp
+    src/cpu/conflict.cpp
 )
 
 set(CUDA_SOURCES
@@ -61,8 +60,8 @@ add_library(fresub_cpu STATIC ${CPU_LIB_SOURCES})
 target_include_directories(fresub_cpu PRIVATE 
     ${EXOPT_INCLUDE_DIR}
     ${EXOPT_AIG_INCLUDE_DIR}
-    ${EXOPT_CADICAL_INCLUDE_DIR}
     ${EXOPT_KISSAT_INCLUDE_DIR}
+    ${EXOPT_CADICAL_INCLUDE_DIR}
 )
 
 # Link exopt library to fresub_cpu
@@ -81,13 +80,20 @@ set_target_properties(fresub_cuda PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS OFF
 )
 
-# Main executable
-add_executable(fresub src/cpu/main.cpp)
+# Main executable - clean resubstitution engine
+add_executable(fresub src/cpu/main_resubstitution.cpp)
+
+# Add exopt include directories to fresub executable 
+target_include_directories(fresub PRIVATE 
+    ${EXOPT_INCLUDE_DIR}
+    ${EXOPT_AIG_INCLUDE_DIR}
+    ${EXOPT_KISSAT_INCLUDE_DIR}
+    ${EXOPT_CADICAL_INCLUDE_DIR}
+)
 
 # Link libraries
 target_link_libraries(fresub
     fresub_cpu
-    fresub_cuda
     Threads::Threads
 )
 
@@ -112,46 +118,8 @@ target_compile_options(fresub_cuda PRIVATE
     >
 )
 
-# Add test executables
-add_executable(test_complete_resubstitution src/cpu/test_complete_resubstitution.cpp)
-target_include_directories(test_complete_resubstitution PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-)
-target_link_libraries(test_complete_resubstitution 
-    fresub_cpu 
-    Threads::Threads
-)
 
-add_executable(test_two_stage src/cpu/test_two_stage.cpp)
-target_include_directories(test_two_stage PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-)
-target_link_libraries(test_two_stage 
-    fresub_cpu
-    Threads::Threads
-)
-
-add_executable(test_debug_insertion src/cpu/test_debug_insertion.cpp)
-target_include_directories(test_debug_insertion PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-)
-target_link_libraries(test_debug_insertion 
-    fresub_cpu
-    Threads::Threads
-)
-
-add_executable(test_single_insertion src/cpu/test_single_insertion.cpp)
-target_include_directories(test_single_insertion PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-)
-target_link_libraries(test_single_insertion 
-    fresub_cpu
-    Threads::Threads
-)
+# Test executables moved to tests/ directory
 
 # Optional: Add tests
 option(BUILD_TESTS "Build tests" ON)

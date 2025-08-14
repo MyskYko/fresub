@@ -39,6 +39,7 @@ public:
     int create_and(int fanin0, int fanin1);
     void remove_node(int node_id);
     void replace_node(int old_node, int new_node);
+    void remove_mffc(int node_id);  // Remove Maximum Fanout-Free Cone
     
     // Simulation
     void simulate(const std::vector<uint64_t>& pi_values);

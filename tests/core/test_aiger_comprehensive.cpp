@@ -1,11 +1,11 @@
-#include "../include/aig.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 #include <fstream>
 #include <cassert>
 #include <filesystem>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \
@@ -406,4 +406,23 @@ void test_file_validation() {
     }
     
     std::cout << "  File validation tests completed\n";
+}
+
+int main() {
+    std::cout << "=== AIGER Comprehensive Test ===\n\n";
+    
+    test_ascii_format_comprehensive();
+    test_binary_format_comprehensive();
+    test_roundtrip_consistency();
+    test_edge_cases_aiger();
+    test_file_validation();
+    
+    std::cout << "\nTest Results: ";
+    if (passed_tests == total_tests) {
+        std::cout << "PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        return 0;
+    } else {
+        std::cout << "FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        return 1;
+    }
 }

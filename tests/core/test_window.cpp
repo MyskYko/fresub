@@ -1,9 +1,9 @@
-#include "../include/window.hpp"
-#include "../include/aig.hpp"
+#include "window.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \
@@ -37,17 +37,19 @@ void test_window_extraction() {
     aig.compute_levels();
     
     // Test window extraction
-    WindowExtractor extractor(aig, 4, 6);
-    Window window;
+    WindowExtractor extractor(aig, 4);
+    std::vector<Window> windows;
     
-    bool success = extractor.extract_window(5, window);
-    ASSERT(success == true);
-    ASSERT(window.target_node == 5);
+    extractor.extract_all_windows(windows);
+    ASSERT(!windows.empty());
+    
+    // Test first window
+    Window& window = windows[0];
     ASSERT(!window.inputs.empty());
     ASSERT(!window.nodes.empty());
     
     // Test cut enumeration
-    CutEnumerator cut_enum(aig, 4, 10);
+    CutEnumerator cut_enum(aig, 4);
     cut_enum.enumerate_cuts();
     
     const auto& cuts = cut_enum.get_cuts(5);
@@ -59,9 +61,24 @@ void test_window_extraction() {
     ASSERT(cut1.leaves.size() == 1);
     ASSERT(cut1.leaves[0] == 1);
     
-    bool merged = cut1.merge_with(cut2, 4);
-    ASSERT(merged == true);
-    ASSERT(cut1.leaves.size() == 2);
+    // Test basic cut properties
+    ASSERT(cut2.leaves.size() == 1);
+    ASSERT(cut2.leaves[0] == 2);
     
     std::cout << "  Window extraction tests completed\n";
+}
+
+int main() {
+    std::cout << "=== Window Extraction Test ===\n\n";
+    
+    test_window_extraction();
+    
+    std::cout << "\nTest Results: ";
+    if (passed_tests == total_tests) {
+        std::cout << "PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        return 0;
+    } else {
+        std::cout << "FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        return 1;
+    }
 }

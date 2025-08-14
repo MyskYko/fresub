@@ -1,8 +1,8 @@
 #include <iostream>
 #include <chrono>
-#include "aig.hpp"
+#include "fresub_aig.hpp"
 #include "window.hpp"
-#include "resub.hpp"
+#include "feasibility.hpp"
 #include "conflict.hpp"
 
 using namespace fresub;

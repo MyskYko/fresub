@@ -90,14 +90,19 @@ MappingResult fresub::map_and_insert_aig(AIG& target_aig, const AIG& converted_a
               << (converted_aig.num_nodes - converted_aig.num_pis) << " gates\n";
     std::cout << "  Target AIG: " << target_aig.num_nodes << " nodes\n";
     
-    // Create mapping from converted nodes to target nodes
-    std::unordered_map<int, int> node_map;
+    // Create mapping from converted variables to target literals
+    std::unordered_map<int, int> var_to_literal_map;
     
-    // Map converted PIs to target nodes
+    // Map constant 0
+    var_to_literal_map[0] = 0;  // constant 0 maps to literal 0
+    
+    // Map converted PIs to target literals
     for (int i = 1; i <= converted_aig.num_pis; i++) {
         int target_node = input_mapping[i - 1];  // input_mapping is 0-indexed
-        node_map[i] = target_node;
-        std::cout << "  Map converted PI " << i << " -> target node " << target_node << "\n";
+        int target_literal = AIG::var2lit(target_node);  // Convert to literal
+        var_to_literal_map[i] = target_literal;
+        std::cout << "  Map converted PI " << i << " -> target literal " << target_literal 
+                  << " (node " << target_node << ")\n";
     }
     
     // Convert and insert gates
@@ -105,27 +110,32 @@ MappingResult fresub::map_and_insert_aig(AIG& target_aig, const AIG& converted_a
         int fanin0_lit = converted_aig.nodes[i].fanin0;
         int fanin1_lit = converted_aig.nodes[i].fanin1;
         
-        int fanin0_node = AIG::lit2var(fanin0_lit);
-        int fanin1_node = AIG::lit2var(fanin1_lit);
+        int fanin0_var = AIG::lit2var(fanin0_lit);
+        int fanin1_var = AIG::lit2var(fanin1_lit);
         bool fanin0_comp = AIG::is_complemented(fanin0_lit);
         bool fanin1_comp = AIG::is_complemented(fanin1_lit);
         
-        // Map to target nodes
-        int target_fanin0 = node_map[fanin0_node];
-        int target_fanin1 = node_map[fanin1_node];
+        // Get target literals for fanins
+        int base_target_lit0 = var_to_literal_map[fanin0_var];
+        int base_target_lit1 = var_to_literal_map[fanin1_var];
         
-        // Create literals
-        int target_lit0 = AIG::var2lit(target_fanin0, fanin0_comp);
-        int target_lit1 = AIG::var2lit(target_fanin1, fanin1_comp);
+        // Apply complementation from the converted AIG
+        int target_lit0 = fanin0_comp ? AIG::complement(base_target_lit0) : base_target_lit0;
+        int target_lit1 = fanin1_comp ? AIG::complement(base_target_lit1) : base_target_lit1;
         
         // Create AND gate in target AIG
-        int new_node = target_aig.create_and(target_lit0, target_lit1);
-        node_map[i] = new_node;
+        int new_literal = target_aig.create_and(target_lit0, target_lit1);
+        
+        // Store the mapping from converted variable to target literal
+        var_to_literal_map[i] = new_literal;
+        
+        // Track the new node for the result
+        int new_node = AIG::lit2var(new_literal);
         result.new_nodes.push_back(new_node);
         
-        std::cout << "  Created gate " << new_node << " = " 
-                  << (fanin0_comp ? "!" : "") << target_fanin0 << " & "
-                  << (fanin1_comp ? "!" : "") << target_fanin1 << "\n";
+        std::cout << "  Created gate " << new_node << " (lit " << new_literal << ") = " 
+                  << (fanin0_comp ? "!" : "") << AIG::lit2var(base_target_lit0) << " & "
+                  << (fanin1_comp ? "!" : "") << AIG::lit2var(base_target_lit1) << "\n";
     }
     
     // Set output node (last created gate)

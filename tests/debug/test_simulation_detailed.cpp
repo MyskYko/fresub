@@ -1,11 +1,11 @@
-#include "../include/aig.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 #include <cassert>
 #include <vector>
 #include <bitset>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \

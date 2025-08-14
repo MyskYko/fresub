@@ -1,10 +1,10 @@
-#include "../include/aig.hpp"
+#include "fresub_aig.hpp"
 #include <iostream>
 #include <cassert>
 #include <algorithm>
 
-extern int total_tests;
-extern int passed_tests;
+int total_tests = 0;
+int passed_tests = 0;
 
 #define ASSERT(cond) do { \
     total_tests++; \
@@ -308,4 +308,25 @@ void test_structural_hash() {
     ASSERT(aig.nodes[AIG::lit2var(node1)].fanin1 == AIG::var2lit(2));
     
     std::cout << "  Structural tests completed\n";
+}
+
+int main() {
+    std::cout << "=== AIG Modification Test ===\n\n";
+    
+    test_node_creation();
+    test_trivial_and_cases();
+    test_node_removal();
+    test_node_replacement();
+    test_po_replacement();
+    test_chain_modification();
+    test_structural_hash();
+    
+    std::cout << "\nTest Results: ";
+    if (passed_tests == total_tests) {
+        std::cout << "PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        return 0;
+    } else {
+        std::cout << "FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        return 1;
+    }
 }
