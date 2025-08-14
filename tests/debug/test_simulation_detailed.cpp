@@ -249,3 +249,24 @@ void test_deep_circuit_simulation() {
     
     std::cout << "  Deep circuit simulation tests completed\n";
 }
+
+int main() {
+    std::cout << "=== Simulation Detailed Test ===\n\n";
+    
+    test_basic_simulation();
+    test_complex_simulation(); 
+    test_parallel_simulation();
+    test_multi_output_simulation();
+    test_deep_circuit_simulation();
+    
+    std::cout << "\n=== SIMULATION TEST RESULTS ===\n";
+    std::cout << "Passed: " << passed_tests << "/" << total_tests << std::endl;
+    
+    if (passed_tests == total_tests) {
+        std::cout << "✅ All tests passed!\n";
+        return 0;
+    } else {
+        std::cout << "❌ Some tests failed!\n";
+        return 1;
+    }
+}

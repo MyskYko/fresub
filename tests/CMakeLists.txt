@@ -71,6 +71,7 @@ set(DEBUG_TESTS_ALL
     debug/test_cuts_stepby
     debug/test_debug_insertion
     debug/test_exopt_debug
+    debug/test_feasibility_detailed
     debug/test_feasibility_verification
     debug/test_isolated_conversion
     debug/test_mffc_debug
@@ -79,6 +80,8 @@ set(DEBUG_TESTS_ALL
     debug/test_parallel_stress
     debug/test_resub_detection_status
     debug/test_resub_opportunities
+    debug/test_simulation_detailed
+    debug/test_synthesis_detailed
     debug/test_tfo_analysis
     debug/test_truth_table_debug
     debug/test_window_compare

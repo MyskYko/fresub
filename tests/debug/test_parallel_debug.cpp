@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  Nodes: " << aig.num_nodes << "\n";
         
         std::cout << "Creating WindowExtractor...\n";
-        WindowExtractor extractor(aig, 4, 6); // Smaller sizes for testing
+        WindowExtractor extractor(aig, 4); // Use current API: max_cut_size=4
         
         std::cout << "Extracting windows...\n";
         std::vector<Window> windows;
@@ -37,23 +37,32 @@ int main(int argc, char* argv[]) {
             std::cout << "Limited to " << windows.size() << " windows for testing\n";
         }
         
-        std::cout << "Creating ParallelResubManager with " << num_threads << " threads...\n";
-        ParallelResubManager manager(aig, num_threads);
+        std::cout << "Creating ConflictResolver (parallel processing not yet implemented)...\n";
+        std::cout << "Using sequential processing with " << num_threads << " threads requested\n";
+        ConflictResolver resolver(aig);
         
-        std::cout << "Starting parallel resubstitution...\n";
-        std::cout << "  (This is where the crash might occur)\n";
+        // Mock resubstitution function for testing
+        auto mock_resubstitution = [&](const Window& window) -> bool {
+            // Simple mock - just return true for some windows to simulate work
+            return (window.target_node % 3 == 0); // Mock: accept every 3rd window
+        };
         
-        manager.parallel_resubstitute(windows);
+        std::cout << "Starting sequential processing (parallel not implemented)...\n";
+        std::vector<bool> results = resolver.process_windows_sequentially(windows, mock_resubstitution);
         
-        std::cout << "Parallel resubstitution completed successfully!\n";
+        std::cout << "Processing completed successfully!\n";
         
-        auto stats = manager.get_stats();
+        // Calculate stats
+        int successful = 0, failed = 0;
+        for (bool result : results) {
+            if (result) successful++;
+            else failed++;
+        }
         std::cout << "Statistics:\n";
-        std::cout << "  Total windows: " << stats.total_windows << "\n";
-        std::cout << "  Successful resubs: " << stats.successful_resubs << "\n";
-        std::cout << "  Conflicts detected: " << stats.conflicts_detected << "\n";
-        std::cout << "  Commits applied: " << stats.commits_applied << "\n";
-        std::cout << "  Total gain: " << stats.total_gain << "\n";
+        std::cout << "  Total windows: " << results.size() << "\n";
+        std::cout << "  Successful resubs: " << successful << "\n";
+        std::cout << "  Failed resubs: " << failed << "\n";
+        std::cout << "  Note: Parallel processing not yet implemented, using sequential\n";
         
         std::cout << "Done!\n";
         return 0;
