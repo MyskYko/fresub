@@ -27,7 +27,7 @@ public:
     
     // Process candidates sequentially, applying valid ones
     std::vector<bool> process_candidates_sequentially(
-        const std::vector<ResubstitutionCandidate>& candidates) const;
+        const std::vector<ResubstitutionCandidate>& candidates, bool verbose = false) const;
     
 private:
     aigman& aig;

@@ -4,11 +4,10 @@
 #include <chrono>
 #include <cstring>
 
-#include "fresub_aig.hpp"
 #include "window.hpp"
 #include "feasibility.hpp"
 #include "synthesis_bridge.hpp"
-#include "aig_insertion.hpp"
+#include "conflict.hpp"
 #include <aig.hpp>  // For complete aigman type
 
 using namespace fresub;
@@ -55,93 +54,103 @@ Config parse_args(int argc, char** argv) {
     return config;
 }
 
-// Execute complete resubstitution pipeline on a single window
-bool resubstitute_window(AIG& aig, const Window& window, bool verbose) {
+// Create resubstitution candidate from a window (without applying it)
+ResubstitutionCandidate* create_resubstitution_candidate(aigman& aig, const Window& window, bool verbose) {
     if (verbose) {
         std::cout << "Processing window with target " << window.target_node 
                   << " (" << window.inputs.size() << " inputs, " 
                   << window.divisors.size() << " divisors)\n";
     }
     
-    // Step 1: Feasibility check
-    FeasibilityResult feasible = find_feasible_4resub(aig, window);
-    if (!feasible.found) {
-        if (verbose) std::cout << "  No feasible resubstitution found\n";
-        return false;
+    // Step 1: Compute truth tables for feasibility check
+    WindowExtractor extractor(aig, 4);
+    auto all_truth_tables = extractor.compute_truth_tables_for_window(
+        window.target_node, window.inputs, window.nodes, window.divisors);
+    
+    if (all_truth_tables.empty()) {
+        if (verbose) std::cout << "  Could not compute truth tables\n";
+        return nullptr;
     }
     
+    // Extract divisor truth tables and target truth table
+    std::vector<std::vector<uint64_t>> divisor_truth_tables;
+    for (size_t i = 0; i < window.divisors.size(); i++) {
+        if (i < all_truth_tables.size()) {
+            divisor_truth_tables.push_back(all_truth_tables[i]);
+        } else {
+            divisor_truth_tables.push_back({0});
+        }
+    }
+    
+    std::vector<uint64_t> target_truth_table;
+    if (!all_truth_tables.empty()) {
+        target_truth_table = all_truth_tables.back();
+    } else {
+        target_truth_table = {0};
+    }
+    
+    // Step 2: Feasibility check
+    auto feasible_combinations = find_feasible_4resub(
+        divisor_truth_tables, target_truth_table, window.inputs.size());
+    
+    if (feasible_combinations.empty()) {
+        if (verbose) std::cout << "  No feasible resubstitution found\n";
+        return nullptr;
+    }
+    
+    // Use the first feasible combination
+    auto selected_divisor_indices = feasible_combinations[0];
+    
     if (verbose) {
-        std::cout << "  ✓ Found feasible resubstitution using divisors: {";
-        for (size_t i = 0; i < feasible.divisor_nodes.size(); i++) {
+        std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
+        for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
             if (i > 0) std::cout << ", ";
-            std::cout << feasible.divisor_nodes[i];
+            std::cout << selected_divisor_indices[i];
         }
         std::cout << "}\n";
     }
     
-    // Step 2: Exact synthesis - compute all truth tables efficiently at once
-    auto all_truth_tables = aig.compute_truth_tables_for_window(
-        window.target_node, window.inputs, window.nodes, window.divisors);
+    // Step 3: Synthesis
+    std::vector<std::vector<uint64_t>> selected_divisor_tts;
     
-    // Extract individual truth tables for compatibility with existing code
-    std::vector<uint64_t> divisor_tts;
-    for (size_t i = 0; i < window.divisors.size(); i++) {
-        if (i < all_truth_tables.size() && !all_truth_tables[i].empty()) {
-            divisor_tts.push_back(all_truth_tables[i][0]); // First 64 bits
-        } else {
-            divisor_tts.push_back(0);
-        }
-    }
+    std::vector<std::vector<bool>> br;
+    convert_to_exopt_format(target_truth_table, divisor_truth_tables, 
+                           selected_divisor_indices, window.inputs.size(), br);
     
-    // Target truth table is at the end
-    uint64_t target_tt = 0;
-    if (!all_truth_tables.empty() && !all_truth_tables.back().empty()) {
-        target_tt = all_truth_tables.back()[0]; // First 64 bits
-    }
-    
-    std::vector<std::vector<bool>> br, sim;
-    convert_to_exopt_format(target_tt, divisor_tts, feasible.divisor_indices, 
-                           window.inputs.size(), window.inputs, window.divisors, br, sim);
-    
-    SynthesisResult synthesis = synthesize_circuit(br, sim, 4);
+    SynthesisResult synthesis = synthesize_circuit(br, {}, 4);
     if (!synthesis.success) {
         if (verbose) std::cout << "  Synthesis failed: " << synthesis.description << "\n";
-        return false;
+        return nullptr;
     }
     
     if (verbose) {
         std::cout << "  ✓ Synthesis successful: " << synthesis.synthesized_gates << " gates\n";
     }
     
-    // Step 3: AIG insertion
-    AIGInsertion inserter(aig);
-    aigman* synthesized_aigman = get_synthesis_aigman(synthesis);
+    // Step 4: Create resubstitution candidate (don't apply yet)
+    aigman* synthesized_aigman = synthesis.synthesized_aig;
     if (!synthesized_aigman) {
         if (verbose) std::cout << "  Could not retrieve synthesized circuit\n";
-        return false;
+        return nullptr;
     }
     
-    InsertionResult insertion = inserter.insert_synthesized_circuit(
-        window, feasible.divisor_indices, synthesized_aigman);
-    
-    if (!insertion.success) {
-        if (verbose) std::cout << "  Circuit insertion failed\n";
-        delete synthesized_aigman;
-        return false;
+    // Create selected divisor nodes from indices
+    std::vector<int> selected_divisor_nodes;
+    for (int idx : selected_divisor_indices) {
+        if (idx < static_cast<int>(window.divisors.size())) {
+            selected_divisor_nodes.push_back(window.divisors[idx]);
+        }
     }
     
-    // Step 4: Target replacement
-    bool replacement_success = inserter.replace_target_with_circuit(
-        window.target_node, insertion.new_output_node);
+    // Create and return resubstitution candidate (to be processed later)
+    ResubstitutionCandidate* candidate = new ResubstitutionCandidate(synthesized_aigman, window.target_node, selected_divisor_nodes);
     
-    delete synthesized_aigman;
-    
-    if (replacement_success && verbose) {
-        std::cout << "  ✓ Successfully replaced target node " << window.target_node 
-                  << " with " << insertion.new_nodes.size() << " new nodes\n";
+    if (verbose) {
+        std::cout << "  ✓ Created resubstitution candidate for target node " 
+                  << window.target_node << "\n";
     }
     
-    return replacement_success;
+    return candidate;
 }
 
 int main(int argc, char** argv) {
@@ -153,17 +162,14 @@ int main(int argc, char** argv) {
             std::cout << "Loading AIG from " << config.input_file << "...\n";
         }
         
-        AIG aig;
-        aig.read_aiger(config.input_file);
+        aigman aig;
+        aig.read(config.input_file.c_str());
         
         // Initial statistics
-        int initial_gates = 0;
-        for (int i = aig.num_pis + 1; i < aig.num_nodes; i++) {
-            if (!aig.nodes[i].is_dead) initial_gates++;
-        }
+        int initial_gates = aig.nGates;
         
         if (config.show_stats) {
-            std::cout << "Initial AIG: " << aig.num_pis << " PIs, " << aig.num_pos << " POs, " 
+            std::cout << "Initial AIG: " << aig.nPis << " PIs, " << aig.nPos << " POs, " 
                       << initial_gates << " gates\n";
         }
         
@@ -182,32 +188,46 @@ int main(int argc, char** argv) {
             std::cout << "Extracted " << windows.size() << " windows\n";
         }
         
-        // Perform resubstitution
-        int successful_resubs = 0;
+        // Collect resubstitution candidates
+        std::vector<ResubstitutionCandidate> candidates;
         int attempted_resubs = 0;
         
         for (const auto& window : windows) {
             // Only process windows suitable for 4-input resubstitution
             if (window.inputs.size() >= 3 && window.inputs.size() <= 4 && 
                 window.divisors.size() >= 4 && 
-                window.target_node < aig.nodes.size() && 
-                !aig.nodes[window.target_node].is_dead) {
+                window.target_node < aig.nObjs && 
+                (aig.vDeads.empty() || !aig.vDeads[window.target_node])) {
                 
                 attempted_resubs++;
-                if (resubstitute_window(aig, window, config.verbose)) {
-                    successful_resubs++;
+                ResubstitutionCandidate* candidate = create_resubstitution_candidate(aig, window, config.verbose);
+                if (candidate) {
+                    candidates.push_back(*candidate);
+                    delete candidate; // Transfer ownership to vector
                 }
             }
+        }
+        
+        if (config.verbose) {
+            std::cout << "\nCollected " << candidates.size() << " resubstitution candidates\n";
+            std::cout << "Processing candidates sequentially...\n";
+        }
+        
+        // Process candidates sequentially to avoid conflicts
+        ConflictResolver resolver(aig);
+        auto results = resolver.process_candidates_sequentially(candidates, config.verbose);
+        
+        // Count successful applications
+        int successful_resubs = 0;
+        for (bool success : results) {
+            if (success) successful_resubs++;
         }
         
         auto end_time = high_resolution_clock::now();
         auto duration = duration_cast<milliseconds>(end_time - start_time);
         
         // Final statistics
-        int final_gates = 0;
-        for (int i = aig.num_pis + 1; i < aig.num_nodes; i++) {
-            if (!aig.nodes[i].is_dead) final_gates++;
-        }
+        int final_gates = aig.nGates;
         
         if (config.show_stats || config.verbose) {
             std::cout << "\nResubstitution complete:\n";
@@ -233,7 +253,7 @@ int main(int argc, char** argv) {
             if (config.verbose) {
                 std::cout << "Writing optimized AIG to " << config.output_file << "...\n";
             }
-            aig.write_aiger(config.output_file, true);
+            aig.write(config.output_file.c_str());
         }
         
         return 0;

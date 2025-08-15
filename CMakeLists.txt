@@ -55,14 +55,14 @@ set_target_properties(fresub_cuda PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS OFF
 )
 
-# Main executable - clean resubstitution engine (DISABLED)
-# add_executable(fresub src/cpu/main_resubstitution.cpp)
+# Main executable - clean resubstitution engine (TEMPORARILY ENABLED FOR TESTING)
+add_executable(fresub src/cpu/main_resubstitution.cpp)
 
 # Link libraries - includes come automatically from fresub_cpu's dependencies
-# target_link_libraries(fresub
-#     fresub_cpu
-#     Threads::Threads
-# )
+target_link_libraries(fresub
+    fresub_cpu
+    Threads::Threads
+)
 
 # Note: The nvlink warnings about system libraries (librt, libpthread, libdl) 
 # are harmless and expected. They occur because nvlink skips CPU-only libraries

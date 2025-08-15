@@ -13,7 +13,7 @@ SynthesisResult synthesize_circuit(const vector<vector<bool>>& br,
     result.success = false;
     result.original_gates = 0;
     result.synthesized_gates = 0;
-    result.internal_aigman = nullptr;
+    result.synthesized_aig = nullptr;
     
     // Create synthesis manager - pass NULL for sim since we don't use it
     SynthMan<KissatSolver> synth_man(br, nullptr);
@@ -27,25 +27,17 @@ SynthesisResult synthesize_circuit(const vector<vector<bool>>& br,
     if (aig) {
         result.success = true;
         result.synthesized_gates = aig->nGates;
-        result.internal_aigman = static_cast<void*>(aig);  // Store aigman for insertion
+        result.synthesized_aig = aig;  // Direct aigman pointer assignment
         
         result.description = "Synthesized AIG with " + to_string(aig->nGates) + " gates";
         
         // Note: DON'T delete aig here - it's needed for insertion
-        // The insertion engine will handle cleanup
+        // The caller will handle cleanup
     } else {
         result.description = "Synthesis failed - no solution found within gate limit";
     }
     
     return result;
-}
-
-// Internal function to get aigman from synthesis result
-aigman* get_synthesis_aigman(const SynthesisResult& result) {
-    if (!result.success || !result.internal_aigman) {
-        return nullptr;
-    }
-    return static_cast<aigman*>(result.internal_aigman);
 }
 
 // Convert truth tables to exopt binary relation format

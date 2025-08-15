@@ -234,7 +234,7 @@ void test_conflict_resolution() {
     
     // Test sequential processing of candidates
     std::cout << "\nTesting sequential candidate processing:\n";
-    auto results = resolver.process_candidates_sequentially(candidates);
+    auto results = resolver.process_candidates_sequentially(candidates, true); // verbose for tests
     
     int applied = 0, skipped = 0;
     for (bool result : results) {

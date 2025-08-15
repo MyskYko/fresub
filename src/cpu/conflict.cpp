@@ -40,20 +40,24 @@ bool ConflictResolver::is_candidate_valid(const ResubstitutionCandidate& candida
 }
 
 std::vector<bool> ConflictResolver::process_candidates_sequentially(
-    const std::vector<ResubstitutionCandidate>& candidates) const {
+    const std::vector<ResubstitutionCandidate>& candidates, bool verbose) const {
     
     std::vector<bool> results(candidates.size(), false);
     int applied = 0, skipped = 0;
     
-    std::cout << "Processing " << candidates.size() << " resubstitution candidates sequentially...\n";
+    if (verbose) {
+        std::cout << "Processing " << candidates.size() << " resubstitution candidates sequentially...\n";
+    }
     
     for (size_t i = 0; i < candidates.size(); i++) {
         const ResubstitutionCandidate& candidate = candidates[i];
         
         // Check if candidate is still valid
         if (!is_candidate_valid(candidate)) {
-            std::cout << "  Candidate " << i << " (target " << candidate.target_node 
-                      << "): SKIPPED (invalid)\n";
+            if (verbose) {
+                std::cout << "  Candidate " << i << " (target " << candidate.target_node 
+                          << "): SKIPPED (invalid)\n";
+            }
             skipped++;
             continue;
         }
@@ -61,15 +65,19 @@ std::vector<bool> ConflictResolver::process_candidates_sequentially(
 	std::vector<int> outputs = {candidates[i].target_node << 1};
         aig.import(candidates[i].aig, candidates[i].selected_divisor_nodes, outputs);
 	
-        std::cout << "  Candidate " << i << " (target " << candidate.target_node 
-                  << "): APPLIED (synthesized with " << candidate.selected_divisor_nodes.size() 
-                  << " divisors)\n";
+        if (verbose) {
+            std::cout << "  Candidate " << i << " (target " << candidate.target_node 
+                      << "): APPLIED (synthesized with " << candidate.selected_divisor_nodes.size() 
+                      << " divisors)\n";
+        }
         results[i] = true;
         applied++;
     }
     
-    std::cout << "Sequential processing complete: " << applied 
-              << " applied, " << skipped << " skipped\n";
+    if (verbose) {
+        std::cout << "Sequential processing complete: " << applied 
+                  << " applied, " << skipped << " skipped\n";
+    }
     
     return results;
 }
