@@ -37,10 +37,6 @@ foreach(test_name IN LISTS CORE_TESTS)
     add_executable(${test_basename} ${test_name}.cpp)
     target_include_directories(${test_basename} PRIVATE 
         ${CMAKE_SOURCE_DIR}/include
-        ${EXOPT_INCLUDE_DIR}
-        ${EXOPT_AIG_INCLUDE_DIR}
-        ${EXOPT_KISSAT_INCLUDE_DIR}
-        ${EXOPT_CADICAL_INCLUDE_DIR}
     )
     target_link_libraries(${test_basename} 
         fresub_cpu 
@@ -54,10 +50,6 @@ foreach(test_name IN LISTS INTEGRATION_TESTS)
     add_executable(${test_basename} ${test_name}.cpp)
     target_include_directories(${test_basename} PRIVATE 
         ${CMAKE_SOURCE_DIR}/include
-        ${EXOPT_INCLUDE_DIR}
-        ${EXOPT_AIG_INCLUDE_DIR}
-        ${EXOPT_KISSAT_INCLUDE_DIR}
-        ${EXOPT_CADICAL_INCLUDE_DIR}
     )
     target_link_libraries(${test_basename} 
         fresub_cpu 
@@ -97,10 +89,6 @@ foreach(test_name IN LISTS DEBUG_TESTS_ALL)
     add_executable(${test_basename} ${test_name}.cpp)
     target_include_directories(${test_basename} PRIVATE 
         ${CMAKE_SOURCE_DIR}/include
-        ${EXOPT_INCLUDE_DIR}
-        ${EXOPT_AIG_INCLUDE_DIR}
-        ${EXOPT_KISSAT_INCLUDE_DIR}
-        ${EXOPT_CADICAL_INCLUDE_DIR}
     )
     target_link_libraries(${test_basename} 
         fresub_cpu 

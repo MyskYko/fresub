@@ -21,22 +21,11 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Find required packages
 find_package(Threads REQUIRED)
 
-# Find exopt external library  
-find_library(EXOPT_LIB exopt_lib PATHS ${CMAKE_SOURCE_DIR}/../exopt/build)
-find_library(EXOPT_AIG_LIB aig PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/lib/aig)
-find_library(EXOPT_CADICAL_LIB cadical PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/lib/cadical)  
-find_library(EXOPT_KISSAT_LIB kissat PATHS ${CMAKE_SOURCE_DIR}/../exopt/build/lib/kissat)
+# Add exopt as a subdirectory (now included in lib/)
+add_subdirectory(lib/exopt)
 
-# Find exopt include directories
-find_path(EXOPT_INCLUDE_DIR synth.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/include)
-find_path(EXOPT_AIG_INCLUDE_DIR aig.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/aig)
-find_path(EXOPT_KISSAT_INCLUDE_DIR kissat.h PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/kissat/src)
-find_path(EXOPT_CADICAL_INCLUDE_DIR cadical.hpp PATHS ${CMAKE_SOURCE_DIR}/../exopt/lib/cadical/src)
-
-# Check if exopt was found
-if(NOT EXOPT_LIB OR NOT EXOPT_INCLUDE_DIR OR NOT EXOPT_AIG_INCLUDE_DIR)
-    message(FATAL_ERROR "exopt library not found. Please build exopt first.")
-endif()
+# The exopt_lib target will provide all necessary includes through its PUBLIC properties
+# No need to manually set include paths - they come automatically from target_link_libraries
 
 # Source files - separate library sources from main
 set(CPU_LIB_SOURCES
@@ -56,21 +45,10 @@ set(CUDA_SOURCES
 # Create library for CPU components (without main.cpp)
 add_library(fresub_cpu STATIC ${CPU_LIB_SOURCES})
 
-# Add exopt include directories to fresub_cpu
-target_include_directories(fresub_cpu PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-    ${EXOPT_KISSAT_INCLUDE_DIR}
-    ${EXOPT_CADICAL_INCLUDE_DIR}
-)
-
-# Link exopt library to fresub_cpu
-target_link_libraries(fresub_cpu PRIVATE 
+# Link libraries - use PUBLIC so our executables get the includes
+target_link_libraries(fresub_cpu PUBLIC 
     Threads::Threads
-    ${EXOPT_LIB}
-    ${EXOPT_AIG_LIB}
-    ${EXOPT_CADICAL_LIB}
-    ${EXOPT_KISSAT_LIB}
+    exopt_lib  # This brings in all exopt dependencies and includes automatically
 )
 
 # Create CUDA library
@@ -83,15 +61,7 @@ set_target_properties(fresub_cuda PROPERTIES
 # Main executable - clean resubstitution engine
 add_executable(fresub src/cpu/main_resubstitution.cpp)
 
-# Add exopt include directories to fresub executable 
-target_include_directories(fresub PRIVATE 
-    ${EXOPT_INCLUDE_DIR}
-    ${EXOPT_AIG_INCLUDE_DIR}
-    ${EXOPT_KISSAT_INCLUDE_DIR}
-    ${EXOPT_CADICAL_INCLUDE_DIR}
-)
-
-# Link libraries
+# Link libraries - includes come automatically from fresub_cpu's dependencies
 target_link_libraries(fresub
     fresub_cpu
     Threads::Threads
