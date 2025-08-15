@@ -13,8 +13,8 @@ bool solve_resub_overlap_multiword(int i, int j, int k, int l,
                                   const std::vector<std::vector<uint64_t>>& truth_tables,
                                   const std::vector<uint64_t>& target_tt, int num_inputs) {
     
-    if (i >= truth_tables.size() || j >= truth_tables.size() || 
-        k >= truth_tables.size() || l >= truth_tables.size()) {
+    if (i >= static_cast<int>(truth_tables.size()) || j >= static_cast<int>(truth_tables.size()) || 
+        k >= static_cast<int>(truth_tables.size()) || l >= static_cast<int>(truth_tables.size())) {
         return false;
     }
     

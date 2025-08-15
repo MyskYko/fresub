@@ -61,10 +61,10 @@ std::vector<bool> ConflictResolver::process_candidates_sequentially(
             skipped++;
             continue;
         }
-	
-	std::vector<int> outputs = {candidates[i].target_node << 1};
+        
+        std::vector<int> outputs = {candidates[i].target_node << 1};
         aig.import(candidates[i].aig, candidates[i].selected_divisor_nodes, outputs);
-	
+        
         if (verbose) {
             std::cout << "  Candidate " << i << " (target " << candidate.target_node 
                       << "): APPLIED (synthesized with " << candidate.selected_divisor_nodes.size() 

@@ -1,22 +1,22 @@
 cmake_minimum_required(VERSION 3.18)
 
-# Tests during restructuring
-set(UNIT_TESTS
-    unit/test_window_extraction
-    unit/test_simulation
-    unit/test_feasibility
-    unit/test_synthesis
-    unit/test_insertion
+# Tests - flattened structure
+set(TEST_SOURCES
+    test_window_extraction.cpp
+    test_simulation.cpp
+    test_feasibility.cpp
+    test_synthesis.cpp
+    test_insertion.cpp
 )
 
-# Add unit tests (window test only)
-foreach(test_name IN LISTS UNIT_TESTS)
-    get_filename_component(test_basename ${test_name} NAME)
-    add_executable(${test_basename} ${test_name}.cpp)
-    target_include_directories(${test_basename} PRIVATE 
+# Add test executables
+foreach(test_source IN LISTS TEST_SOURCES)
+    get_filename_component(test_name ${test_source} NAME_WE)
+    add_executable(${test_name} ${test_source})
+    target_include_directories(${test_name} PRIVATE 
         ${CMAKE_SOURCE_DIR}/include
     )
-    target_link_libraries(${test_basename} 
+    target_link_libraries(${test_name} 
         fresub_cpu 
         Threads::Threads
     )

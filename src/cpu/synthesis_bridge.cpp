@@ -6,7 +6,6 @@
 using namespace std;
 
 SynthesisResult synthesize_circuit(const vector<vector<bool>>& br, 
-                                  const vector<vector<bool>>& sim,
                                   int max_gates) {
     
     SynthesisResult result;

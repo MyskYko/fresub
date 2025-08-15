@@ -30,7 +30,7 @@ void WindowExtractor::create_windows_from_cuts(std::vector<Window>& windows) {
                 // Skip trivial cut
                 continue;
             }
-            if (cut.leaves.size() > max_cut_size) {
+            if (cut.leaves.size() > static_cast<size_t>(max_cut_size)) {
                 continue;
             }
             all_cuts.emplace_back(target, cut);
@@ -285,8 +285,8 @@ std::vector<std::vector<uint64_t>> WindowExtractor::compute_truth_tables_for_win
         bool comp1 = is_complemented(aig.vObjs[current_node * 2 + 1]);
         
         // Apply complementation and compute AND word by word
-	node_tt[current_node].resize(num_words);
-        for (size_t w = 0; w < num_words; w++) {
+        node_tt[current_node].resize(num_words);
+        for (int w = 0; w < num_words; w++) {
             uint64_t val0 = comp0 ? ~node_tt[fanin0][w] : node_tt[fanin0][w];
             uint64_t val1 = comp1 ? ~node_tt[fanin1][w] : node_tt[fanin1][w];
             node_tt[current_node][w] = val0 & val1;

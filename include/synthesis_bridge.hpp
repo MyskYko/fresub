@@ -16,9 +16,8 @@ struct SynthesisResult {
     aigman* synthesized_aig;  // Direct aigman pointer
 };
 
-// Synthesize optimal circuit from binary relation and simulation matrix
+// Synthesize optimal circuit from binary relation
 SynthesisResult synthesize_circuit(const std::vector<std::vector<bool>>& br, 
-                                  const std::vector<std::vector<bool>>& sim,
                                   int max_gates = 4);
 
 // Convert truth tables to exopt binary relation format

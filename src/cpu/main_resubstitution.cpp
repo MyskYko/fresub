@@ -111,13 +111,11 @@ ResubstitutionCandidate* create_resubstitution_candidate(aigman& aig, const Wind
     }
     
     // Step 3: Synthesis
-    std::vector<std::vector<uint64_t>> selected_divisor_tts;
-    
     std::vector<std::vector<bool>> br;
     convert_to_exopt_format(target_truth_table, divisor_truth_tables, 
                            selected_divisor_indices, window.inputs.size(), br);
     
-    SynthesisResult synthesis = synthesize_circuit(br, {}, 4);
+    SynthesisResult synthesis = synthesize_circuit(br, 4);
     if (!synthesis.success) {
         if (verbose) std::cout << "  Synthesis failed: " << synthesis.description << "\n";
         return nullptr;

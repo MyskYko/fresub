@@ -64,7 +64,7 @@ void test_basic_logic_functions() {
         auto input = create_2input_function(test.truth_table);
         
         try {
-            SynthesisResult result = synthesize_circuit(input.br, {}, 10);
+            SynthesisResult result = synthesize_circuit(input.br, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             
             if (result.success) {
@@ -101,7 +101,7 @@ void test_constant_functions() {
         br[1][0] = true;  br[1][1] = false;  // Input 1 -> Output 0
         
         try {
-            SynthesisResult result = synthesize_circuit(br, {}, 10);
+            SynthesisResult result = synthesize_circuit(br, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -123,7 +123,7 @@ void test_constant_functions() {
         br[1][1] = true;  // Input 1 -> Output 1
         
         try {
-            SynthesisResult result = synthesize_circuit(br, {}, 10);
+            SynthesisResult result = synthesize_circuit(br, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -159,7 +159,7 @@ void test_multi_input_functions() {
         }
         
         try {
-            SynthesisResult result = synthesize_circuit(br, {}, 10);
+            SynthesisResult result = synthesize_circuit(br, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -190,7 +190,7 @@ void test_error_conditions() {
         auto input = create_2input_function("0110"); // XOR needs 3+ gates
         
         try {
-            SynthesisResult result = synthesize_circuit(input.br, {}, 1); // Only 1 gate
+            SynthesisResult result = synthesize_circuit(input.br, 1); // Only 1 gate
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED") << "\n";
             ASSERT(!result.success); // Should fail due to gate limit
         } catch (const std::exception& e) {
@@ -217,8 +217,6 @@ void test_conversion_function() {
         std::vector<std::vector<uint64_t>> divisor_tts = {{0x3}, {0x5}}; // Inputs: 0011, 0101 (single word each)
         std::vector<int> selected_divisors = {0, 1};
         int num_inputs = 2;
-        std::vector<int> window_inputs = {1, 2};
-        std::vector<int> all_divisors = {1, 2};
         
         std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
@@ -304,7 +302,7 @@ void test_end_to_end_pipeline() {
         std::cout << "      Binary relation: " << br.size() << " patterns\n";
         
         // Step 2: Synthesize circuit
-        SynthesisResult result = synthesize_circuit(br, {}, 10);
+        SynthesisResult result = synthesize_circuit(br, 10);
         
         std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
         if (result.success) {
@@ -341,7 +339,7 @@ void test_end_to_end_pipeline() {
         ASSERT(br.size() == 16); // 2^4 patterns
         
         // Step 2: Synthesize
-        SynthesisResult result = synthesize_circuit(br, {}, 10);
+        SynthesisResult result = synthesize_circuit(br, 10);
         
         std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
         if (result.success) {
@@ -376,7 +374,7 @@ void test_end_to_end_pipeline() {
         ASSERT(br.size() == 8); // 2^3 patterns
         
         // Step 2: Synthesize (should fail - this is an infeasible synthesis)
-        SynthesisResult result = synthesize_circuit(br, {}, 10);
+        SynthesisResult result = synthesize_circuit(br, 10);
         
         std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED (expected)");
         if (result.success) {
