@@ -1,0 +1,3 @@
+[submodule "lib/exopt"]
+	path = lib/exopt
+	url = https://github.com/MyskYko/exopt.git
