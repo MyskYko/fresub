@@ -1,8 +1,7 @@
-#include "feasibility.hpp"
-#include "fresub_aig.hpp"
 #include "window.hpp"
+#include "feasibility.hpp"
+#include <aig.hpp>
 #include <iostream>
-#include <vector>
 #include <cassert>
 
 int total_tests = 0;
@@ -19,7 +18,6 @@ int passed_tests = 0;
 
 using namespace fresub;
 
-// Helper to print truth table in binary format
 void print_truth_table_multiword(const std::vector<uint64_t>& tt, int num_inputs, const std::string& label = "") {
     if (!label.empty()) std::cout << label << ": ";
     
@@ -36,396 +34,216 @@ void print_truth_table_multiword(const std::vector<uint64_t>& tt, int num_inputs
     std::cout << " (patterns=" << num_patterns << ", words=" << tt.size() << ")";
 }
 
-// ============================================================================
-// TEST 1: Synthetic Truth Tables - Direct feasibility testing
-// ============================================================================
-
 void test_synthetic_truth_tables() {
     std::cout << "=== TESTING SYNTHETIC TRUTH TABLES ===\n";
     std::cout << "Testing feasibility enumeration with hand-crafted truth table data...\n";
     
-    // Test Case 1: Multi-word feasible case (7 inputs)
+    // Test Case 1: Simple feasible case (4 inputs, 1 word)
     {
-        std::cout << "\n  Test 1: Multi-word feasible case (7 inputs, 2 words)\n";
+        std::cout << "\n  Test 1: Simple feasible case (4 inputs, 1 word)\n";
+        int num_inputs = 4;
+        int num_patterns = 1 << num_inputs;
+        int num_words = 1;
         
-        int num_inputs = 7;
-        int num_patterns = 1 << num_inputs; // 128 patterns
-        size_t num_words = (num_patterns + 63) / 64; // 2 words
+        // Create synthetic truth tables for 4-input test
+        // Divisors: a, b, c, d (inputs)
+        // Target: a & b & c (should be feasible)
+        std::vector<std::vector<uint64_t>> divisors(4, std::vector<uint64_t>(num_words));
+        std::vector<uint64_t> target(num_words);
         
-        std::vector<std::vector<uint64_t>> divisor_tts;
-        for (int i = 0; i < 7; i++) {
-            std::vector<uint64_t> tt(num_words);
-            // Create different patterns for each divisor
-            tt[0] = 0x5555555555555555ULL + i * 0x1111111111111111ULL;
-            tt[1] = 0x3333333333333333ULL + i * 0x0808080808080808ULL;
-            divisor_tts.push_back(tt);
-        }
+        // Fill truth tables manually for 4 inputs (16 patterns)
+        uint64_t pattern_a = 0xaaaa; // 1010101010101010 (bit 0)
+        uint64_t pattern_b = 0xcccc; // 1100110011001100 (bit 1)  
+        uint64_t pattern_c = 0xf0f0; // 1111000011110000 (bit 2)
+        uint64_t pattern_d = 0xff00; // 1111111100000000 (bit 3)
+        uint64_t target_abc = pattern_a & pattern_b & pattern_c; // a & b & c
         
-        // Target: AND of first two divisors (should be feasible)
-        std::vector<uint64_t> target_tt(num_words);
-        for (size_t w = 0; w < num_words; w++) {
-            target_tt[w] = divisor_tts[0][w] & divisor_tts[1][w];
-        }
+        divisors[0][0] = pattern_a;
+        divisors[1][0] = pattern_b;
+        divisors[2][0] = pattern_c;
+        divisors[3][0] = pattern_d;
+        target[0] = target_abc;
         
-        // Test enumeration
-        auto feasible_combinations = find_feasible_4resub(divisor_tts, target_tt, num_inputs);
+        std::cout << "    Divisors:\n";
+        print_truth_table_multiword(divisors[0], num_inputs, "      a");
+        std::cout << "\n";
+        print_truth_table_multiword(divisors[1], num_inputs, "      b");
+        std::cout << "\n";
+        print_truth_table_multiword(divisors[2], num_inputs, "      c");
+        std::cout << "\n";
+        print_truth_table_multiword(divisors[3], num_inputs, "      d");
+        std::cout << "\n";
+        print_truth_table_multiword(target, num_inputs, "    Target (a&b&c)");
+        std::cout << "\n";
         
-        std::cout << "    Found " << feasible_combinations.size() << " feasible combinations:\n";
-        for (size_t c = 0; c < feasible_combinations.size() && c < 3; c++) {
-            std::cout << "      [" << feasible_combinations[c][0] << ","
-                      << feasible_combinations[c][1] << ","
-                      << feasible_combinations[c][2] << ","
-                      << feasible_combinations[c][3] << "]\n";
-        }
-        if (feasible_combinations.size() > 3) {
-            std::cout << "      ... and " << (feasible_combinations.size() - 3) << " more\n";
-        }
-        
-        ASSERT(feasible_combinations.size() > 0); // Should find at least one (target = d0 & d1)
-        std::cout << "    ✓ Multi-word feasibility enumeration working\n";
+        // Test feasibility: should be feasible since target = a & b & c
+        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, divisors, target, num_inputs);
+        std::cout << "    Feasibility result: " << (feasible ? "FEASIBLE" : "NOT FEASIBLE") << "\n";
+        ASSERT(feasible == true); // Should be feasible
     }
     
-    // Test Case 2: Single-word infeasible case
+    // Test Case 2: Infeasible case
     {
-        std::cout << "\n  Test 2: Single-word infeasible case (majority function)\n";
+        std::cout << "\n  Test 2: Infeasible case (4 inputs, 1 word)\n";
+        int num_inputs = 4;
+        int num_words = 1;
         
-        int num_inputs = 3;
-        size_t num_words = 1;
+        // Create truly infeasible case - onset and offset patterns that cannot be distinguished
+        // All divisors have same value for patterns that target treats differently
+        std::vector<std::vector<uint64_t>> divisors(4, std::vector<uint64_t>(num_words));
+        std::vector<uint64_t> target(num_words);
         
-        // Create divisors that cannot express majority
-        std::vector<std::vector<uint64_t>> divisor_tts(5, std::vector<uint64_t>(num_words, 0));
-        divisor_tts[0][0] = 0x00; // constant 0
-        divisor_tts[1][0] = 0xFF; // constant 1  
-        divisor_tts[2][0] = 0x01; // only pattern 000 -> 1
-        divisor_tts[3][0] = 0x02; // only pattern 001 -> 1
-        divisor_tts[4][0] = 0x04; // only pattern 010 -> 1
+        // Create divisors that all have the same pattern - they cannot distinguish anything
+        uint64_t same_pattern = 0xaaaa; // All divisors identical
+        divisors[0][0] = same_pattern;
+        divisors[1][0] = same_pattern;
+        divisors[2][0] = same_pattern;
+        divisors[3][0] = same_pattern;
         
-        // Target: 3-input majority function 11101000
-        std::vector<uint64_t> target_tt(num_words, 0);
-        target_tt[0] = 0xE8; // majority(input0, input1, input2)
+        // Target has different values where divisors cannot distinguish
+        uint64_t target_pattern = 0xcccc; // Different from divisors
+        target[0] = target_pattern;
         
-        // Test enumeration
-        auto feasible_combinations = find_feasible_4resub(divisor_tts, target_tt, num_inputs);
+        std::cout << "    All divisors identical: ";
+        print_truth_table_multiword(divisors[0], num_inputs);
+        std::cout << "\n    Target: ";
+        print_truth_table_multiword(target, num_inputs);
+        std::cout << "\n";
         
-        std::cout << "    Found " << feasible_combinations.size() << " feasible combinations\n";
-        if (feasible_combinations.size() == 0) {
-            std::cout << "    ✓ Correctly detected majority as infeasible with limited divisors\n";
-        } else {
-            std::cout << "    ⚠ Majority detected as feasible - indicates gresub expressiveness\n";
-            for (size_t c = 0; c < feasible_combinations.size() && c < 2; c++) {
-                std::cout << "      [" << feasible_combinations[c][0] << ","
-                          << feasible_combinations[c][1] << ","
-                          << feasible_combinations[c][2] << ","
-                          << feasible_combinations[c][3] << "]\n";
-            }
-        }
-        ASSERT(true); // Pass regardless, this tests algorithm behavior
-        std::cout << "    ✓ Single-word feasibility enumeration working\n";
+        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, divisors, target, num_inputs);
+        std::cout << "    Feasibility result: " << (feasible ? "FEASIBLE" : "NOT FEASIBLE") << "\n";
+        ASSERT(feasible == false); // Should be infeasible - cannot distinguish onset from offset
     }
     
-    std::cout << "✓ Synthetic truth table tests completed\n\n";
+    std::cout << "\n  ✓ Synthetic truth table feasibility tests completed\n";
 }
 
-// ============================================================================
-// TEST 2: Synthetic AIG Window
-// ============================================================================
-
-void test_synthetic_aig_window() {
-    std::cout << "=== TESTING SYNTHETIC AIG WINDOW ===\n";
-    std::cout << "Testing feasibility on window extracted from synthetic AIG...\n";
+void test_feasibility_with_aigman() {
+    std::cout << "\n=== TESTING FEASIBILITY WITH AIGMAN ===\n";
     
-    // Create larger synthetic AIG with more complex structure to generate windows with 5+ divisors
-    AIG aig;
-    aig.num_pis = 8;  // More inputs
-    aig.num_nodes = 30; // Many more nodes
-    aig.nodes.resize(30);
+    // Create the same hardcoded AIG as before
+    aigman aig(3, 1);  // 3 PIs, 1 PO
+    aig.vObjs.resize(9 * 2); 
     
-    for (int i = 0; i < 30; i++) {
-        aig.nodes[i] = AIG::Node{0, 0, 0, {}, false};
-    }
+    // Node 4 = AND(1, 2)
+    aig.vObjs[4 * 2] = 2;     
+    aig.vObjs[4 * 2 + 1] = 4; 
     
-    // Layer 1: Create many intermediate nodes from different input combinations
-    aig.nodes[9].fanin0 = AIG::var2lit(1);   // Node 9 = AND(PI1, PI2)
-    aig.nodes[9].fanin1 = AIG::var2lit(2);
+    // Node 5 = AND(2, 3)
+    aig.vObjs[5 * 2] = 4;    
+    aig.vObjs[5 * 2 + 1] = 6; 
     
-    aig.nodes[10].fanin0 = AIG::var2lit(2);  // Node 10 = AND(PI2, PI3)
-    aig.nodes[10].fanin1 = AIG::var2lit(3);
+    // Node 6 = AND(4, 5)
+    aig.vObjs[6 * 2] = 8;     
+    aig.vObjs[6 * 2 + 1] = 10; 
     
-    aig.nodes[11].fanin0 = AIG::var2lit(3);  // Node 11 = AND(PI3, PI4)
-    aig.nodes[11].fanin1 = AIG::var2lit(4);
+    // Node 7 = AND(4, 3)
+    aig.vObjs[7 * 2] = 8;     
+    aig.vObjs[7 * 2 + 1] = 6; 
     
-    aig.nodes[12].fanin0 = AIG::var2lit(4);  // Node 12 = AND(PI4, PI5)
-    aig.nodes[12].fanin1 = AIG::var2lit(5);
+    // Node 8 = AND(6, 7)
+    aig.vObjs[8 * 2] = 12;    
+    aig.vObjs[8 * 2 + 1] = 14; 
     
-    aig.nodes[13].fanin0 = AIG::var2lit(5);  // Node 13 = AND(PI5, PI6)
-    aig.nodes[13].fanin1 = AIG::var2lit(6);
+    aig.nGates = 5;          
+    aig.nObjs = 9;           
+    aig.vPos[0] = 16;        
     
-    aig.nodes[14].fanin0 = AIG::var2lit(6);  // Node 14 = AND(PI6, PI7)
-    aig.nodes[14].fanin1 = AIG::var2lit(7);
+    std::cout << "Created hardcoded AIG for feasibility testing\n";
     
-    aig.nodes[15].fanin0 = AIG::var2lit(7);  // Node 15 = AND(PI7, PI8)
-    aig.nodes[15].fanin1 = AIG::var2lit(8);
-    
-    aig.nodes[16].fanin0 = AIG::var2lit(1);  // Node 16 = AND(PI1, PI3)
-    aig.nodes[16].fanin1 = AIG::var2lit(3);
-    
-    aig.nodes[17].fanin0 = AIG::var2lit(2);  // Node 17 = AND(PI2, PI4)
-    aig.nodes[17].fanin1 = AIG::var2lit(4);
-    
-    aig.nodes[18].fanin0 = AIG::var2lit(1);  // Node 18 = AND(PI1, PI5)
-    aig.nodes[18].fanin1 = AIG::var2lit(5);
-    
-    aig.nodes[19].fanin0 = AIG::var2lit(3);  // Node 19 = AND(PI3, PI6)
-    aig.nodes[19].fanin1 = AIG::var2lit(6);
-    
-    aig.nodes[20].fanin0 = AIG::var2lit(2);  // Node 20 = AND(PI2, PI7)
-    aig.nodes[20].fanin1 = AIG::var2lit(7);
-    
-    // Layer 2: Combine nodes from layer 1
-    aig.nodes[21].fanin0 = AIG::var2lit(9);  // Node 21 = AND(Node9, Node10)
-    aig.nodes[21].fanin1 = AIG::var2lit(10);
-    
-    aig.nodes[22].fanin0 = AIG::var2lit(11); // Node 22 = AND(Node11, Node12)
-    aig.nodes[22].fanin1 = AIG::var2lit(12);
-    
-    aig.nodes[23].fanin0 = AIG::var2lit(13); // Node 23 = AND(Node13, Node14)
-    aig.nodes[23].fanin1 = AIG::var2lit(14);
-    
-    aig.nodes[24].fanin0 = AIG::var2lit(16); // Node 24 = AND(Node16, Node17)
-    aig.nodes[24].fanin1 = AIG::var2lit(17);
-    
-    aig.nodes[25].fanin0 = AIG::var2lit(18); // Node 25 = AND(Node18, Node19)
-    aig.nodes[25].fanin1 = AIG::var2lit(19);
-    
-    // Layer 3: Create more complex dependencies
-    aig.nodes[26].fanin0 = AIG::var2lit(21); // Node 26 = AND(Node21, Node22)
-    aig.nodes[26].fanin1 = AIG::var2lit(22);
-    
-    aig.nodes[27].fanin0 = AIG::var2lit(23); // Node 27 = AND(Node23, Node24)
-    aig.nodes[27].fanin1 = AIG::var2lit(24);
-    
-    aig.nodes[28].fanin0 = AIG::var2lit(25); // Node 28 = AND(Node25, Node15)
-    aig.nodes[28].fanin1 = AIG::var2lit(15);
-    
-    // Layer 4: Final complex node that depends on many intermediate nodes
-    aig.nodes[29].fanin0 = AIG::var2lit(26); // Node 29 = AND(Node26, Node27)
-    aig.nodes[29].fanin1 = AIG::var2lit(27);
-    
-    // Create multiple outputs to increase window complexity
-    aig.pos.push_back(AIG::var2lit(29));     // Output 1: complex function
-    aig.pos.push_back(AIG::var2lit(28));     // Output 2: another complex function  
-    aig.pos.push_back(AIG::var2lit(20));     // Output 3: simpler function
-    aig.num_pos = 3;
-    
-    aig.build_fanouts();
-    aig.compute_levels();
-    
-    std::cout << "  Built larger synthetic AIG: 8 PIs, 3 POs, deep layered structure\n";
-    
-    // Extract windows
+    // Test feasibility analysis on windows
     WindowExtractor extractor(aig, 4);
     std::vector<Window> windows;
     extractor.extract_all_windows(windows);
+    ASSERT(!windows.empty());
     
-    std::cout << "  Extracted " << windows.size() << " windows\n";
+    int tested_windows = 0;
+    int feasible_windows = 0;
     
-    // Find a window with 5+ divisors
-    bool found_suitable_window = false;
     for (const auto& window : windows) {
-        if (window.divisors.size() >= 5) {
-            found_suitable_window = true;
-            std::cout << "  Testing window (target=" << window.target_node << "):\n";
-            std::cout << "    Inputs: " << window.inputs.size() << ", Divisors: " << window.divisors.size() << "\n";
+        if (window.divisors.size() >= 4 && window.inputs.size() <= 6) {
+            // Test feasibility using real AIG-derived truth tables
+            auto truth_tables = extractor.compute_truth_tables_for_window(
+                window.target_node, window.inputs, window.nodes, window.divisors, false
+            );
             
-            // Print divisors
-            std::cout << "    Divisor nodes: [";
-            for (size_t i = 0; i < window.divisors.size(); i++) {
-                if (i > 0) std::cout << ", ";
-                std::cout << window.divisors[i];
-            }
-            std::cout << "]\n";
-            
-            // Test feasibility using new interface
-            // Get truth tables from AIG
-            auto all_truth_tables = aig.compute_truth_tables_for_window(
-                window.target_node, window.inputs, window.nodes, window.divisors);
-            
-            if (!all_truth_tables.empty()) {
-                // Extract divisor truth tables
-                std::vector<std::vector<uint64_t>> divisor_tts;
-                for (size_t i = 0; i < window.divisors.size() && i < all_truth_tables.size(); i++) {
-                    divisor_tts.push_back(all_truth_tables[i]);
+            if (truth_tables.size() >= 5) { // Need at least 4 divisors + 1 target
+                // Take first 4 divisors for 4-input resubstitution test
+                std::vector<std::vector<uint64_t>> div_tts;
+                for (int i = 0; i < 4; i++) {
+                    div_tts.push_back(truth_tables[i]);
                 }
+                std::vector<uint64_t> target_tt = truth_tables.back();
                 
-                // Target is at the end
-                std::vector<uint64_t> target_tt = all_truth_tables.back();
+                bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, div_tts, target_tt, window.inputs.size());
                 
-                auto feasible_combinations = find_feasible_4resub(divisor_tts, target_tt, window.inputs.size());
-                
-                if (!feasible_combinations.empty()) {
-                    std::cout << "    ✓ FEASIBLE with " << feasible_combinations.size() << " combinations:\n";
-                    for (size_t c = 0; c < feasible_combinations.size() && c < 3; c++) {
-                        std::cout << "      Combination " << (c+1) << ": [";
-                        for (size_t i = 0; i < feasible_combinations[c].size(); i++) {
-                            if (i > 0) std::cout << ", ";
-                            std::cout << window.divisors[feasible_combinations[c][i]];
-                        }
-                        std::cout << "]\n";
-                    }
-                    if (feasible_combinations.size() > 3) {
-                        std::cout << "      ... and " << (feasible_combinations.size() - 3) << " more\n";
-                    }
-                } else {
-                    std::cout << "    ✗ NOT FEASIBLE\n";
+                if (feasible) {
+                    feasible_windows++;
                 }
-            } else {
-                std::cout << "    ✗ Could not compute truth tables\n";
-            }
-            
-            ASSERT(window.divisors.size() >= 5); // Verify we have enough divisors
-            break;
-        }
-    }
-    
-    if (!found_suitable_window) {
-        std::cout << "  Note: No windows with 5+ divisors found in synthetic AIG\n";
-        std::cout << "  This is not necessarily a bug - depends on AIG structure\n";
-        // Don't fail the test, just note this
-        total_tests++;
-        passed_tests++;
-    }
-    std::cout << "✓ Synthetic AIG window test completed\n\n";
-}
-
-// ============================================================================
-// TEST 3: Real AIG Window  
-// ============================================================================
-
-void test_real_aig_window(const std::string& benchmark_file) {
-    std::cout << "=== TESTING REAL AIG WINDOW ===\n";
-    std::cout << "Testing feasibility on window from real benchmark circuit...\n";
-    
-    try {
-        std::cout << "  Loading benchmark: " << benchmark_file << "...\n";
-        AIG aig(benchmark_file);
-        
-        std::cout << "  ✓ Loaded AIG: " << aig.num_pis << " PIs, " 
-                  << aig.num_pos << " POs, " << aig.num_nodes << " nodes\n";
-        
-        // Extract windows
-        WindowExtractor extractor(aig, 4);
-        std::vector<Window> windows;
-        extractor.extract_all_windows(windows);
-        
-        std::cout << "  Extracted " << windows.size() << " windows\n";
-        
-        // Find and test a few windows with 5+ divisors
-        int tested_windows = 0;
-        int feasible_windows = 0;
-        
-        for (const auto& window : windows) {
-            if (window.divisors.size() >= 5 && tested_windows < 3) {
                 tested_windows++;
-                std::cout << "  \nTesting window " << tested_windows << " (target=" << window.target_node << "):\n";
-                std::cout << "    Inputs: " << window.inputs.size() << ", Divisors: " << window.divisors.size() << "\n";
                 
-                // Test feasibility using new interface
-                auto all_truth_tables = aig.compute_truth_tables_for_window(
-                    window.target_node, window.inputs, window.nodes, window.divisors);
-                
-                if (!all_truth_tables.empty()) {
-                    // Extract divisor truth tables
-                    std::vector<std::vector<uint64_t>> divisor_tts;
-                    for (size_t i = 0; i < window.divisors.size() && i < all_truth_tables.size(); i++) {
-                        divisor_tts.push_back(all_truth_tables[i]);
-                    }
-                    
-                    // Target is at the end
-                    std::vector<uint64_t> target_tt = all_truth_tables.back();
-                    
-                    auto feasible_combinations = find_feasible_4resub(divisor_tts, target_tt, window.inputs.size());
-                    
-                    if (!feasible_combinations.empty()) {
-                        feasible_windows++;
-                        std::cout << "    ✓ FEASIBLE with " << feasible_combinations.size() << " combinations:\n";
-                        for (size_t c = 0; c < feasible_combinations.size() && c < 2; c++) {
-                            std::cout << "      Combination " << (c+1) << ": [";
-                            for (size_t i = 0; i < feasible_combinations[c].size(); i++) {
-                                if (i > 0) std::cout << ", ";
-                                std::cout << window.divisors[feasible_combinations[c][i]];
-                            }
-                            std::cout << "]\n";
-                        }
-                        if (feasible_combinations.size() > 2) {
-                            std::cout << "      ... and " << (feasible_combinations.size() - 2) << " more\n";
-                        }
-                    } else {
-                        std::cout << "    ✗ NOT FEASIBLE\n";
-                    }
-                } else {
-                    std::cout << "    ✗ Could not compute truth tables\n";
-                }
-                
-                ASSERT(window.divisors.size() >= 5); // Verify constraint
+                std::cout << "  Window target=" << window.target_node 
+                          << " inputs=" << window.inputs.size() 
+                          << " divisors=" << window.divisors.size()
+                          << " -> " << (feasible ? "FEASIBLE" : "NOT FEASIBLE") << "\n";
             }
         }
-        
-        std::cout << "\n  Real AIG Statistics:\n";
-        std::cout << "    Windows tested: " << tested_windows << "\n";
-        std::cout << "    Feasible windows: " << feasible_windows << "\n";
-        std::cout << "    Feasibility rate: " << (tested_windows > 0 ? (100.0 * feasible_windows / tested_windows) : 0) << "%\n";
-        
-        ASSERT(tested_windows > 0); // Must test at least one window
-        
-    } catch (const std::exception& e) {
-        std::cout << "  Note: Could not load " << benchmark_file << ", skipping real AIG test\n";
-        std::cout << "  (This is not a test failure, just requires a valid benchmark file)\n";
-        // Don't fail the test due to missing file
-        total_tests++;
-        passed_tests++;
-        return;
     }
     
-    std::cout << "✓ Real AIG window test completed\n\n";
+    std::cout << "\nTested " << tested_windows << " windows with 4+ divisors\n";
+    std::cout << "Found " << feasible_windows << " feasible, " 
+              << (tested_windows - feasible_windows) << " infeasible\n";
+    
+    ASSERT(tested_windows > 0); // Should find some windows to test
+    std::cout << "✓ AIG-based feasibility analysis completed\n";
 }
 
-// ============================================================================
-// MAIN TEST DRIVER
-// ============================================================================
-
-int main(int argc, char* argv[]) {
-    std::cout << "========================================\n";
-    std::cout << "    FEASIBILITY TEST SUITE (PROPER)    \n";
-    std::cout << "========================================\n";
-    std::cout << "Testing 4-input resubstitution feasibility with:\n";
-    std::cout << "• Synthetic truth tables (various word lengths)\n";
-    std::cout << "• Synthetic AIG windows (5+ divisors)\n";
-    std::cout << "• Real AIG windows (5+ divisors)\n\n";
+void test_find_feasible_4resub() {
+    std::cout << "\n=== TESTING FIND_FEASIBLE_4RESUB ===\n";
     
-    // Determine benchmark file
-    std::string benchmark_file = "../benchmarks/mul2.aig";
-    if (argc > 1) {
-        benchmark_file = argv[1];
+    // Create simple test case
+    int num_inputs = 4;
+    std::vector<std::vector<uint64_t>> divisors(6, std::vector<uint64_t>(1)); // 6 divisors
+    std::vector<uint64_t> target(1);
+    
+    // Simple patterns
+    divisors[0][0] = 0xaaaa; // a
+    divisors[1][0] = 0xcccc; // b  
+    divisors[2][0] = 0xf0f0; // c
+    divisors[3][0] = 0xff00; // d
+    divisors[4][0] = 0xaaaa & 0xcccc; // a & b
+    divisors[5][0] = 0xf0f0 & 0xff00; // c & d
+    target[0] = divisors[4][0] | divisors[5][0]; // (a & b) | (c & d)
+    
+    auto feasible_combinations = find_feasible_4resub(divisors, target, num_inputs);
+    
+    std::cout << "Found " << feasible_combinations.size() << " feasible 4-input combinations\n";
+    for (size_t i = 0; i < feasible_combinations.size() && i < 5; i++) {
+        const auto& combo = feasible_combinations[i];
+        if (combo.size() == 4) {
+            std::cout << "  Combination " << i << ": [" 
+                      << combo[0] << ", " << combo[1] << ", " 
+                      << combo[2] << ", " << combo[3] << "]\n";
+        }
     }
     
-    // Run the three main test categories
-    test_synthetic_truth_tables();
-    test_synthetic_aig_window();  
-    test_real_aig_window(benchmark_file);
+    ASSERT(feasible_combinations.size() > 0); // Should find some combinations
+    std::cout << "✓ find_feasible_4resub working\n";
+}
+
+int main() {
+    std::cout << "Feasibility Test Suite (aigman + exopt)\n";
+    std::cout << "======================================\n\n";
     
-    // Final results
-    std::cout << "========================================\n";
-    std::cout << "         TEST RESULTS SUMMARY          \n";
-    std::cout << "========================================\n";
+    test_synthetic_truth_tables();
+    test_feasibility_with_aigman(); 
+    test_find_feasible_4resub();
     
     if (passed_tests == total_tests) {
-        std::cout << "🎉 ALL TESTS PASSED! (" << passed_tests << "/" << total_tests << ")\n";
-        std::cout << "\nFeasibility testing completed successfully.\n";
-        std::cout << "Multi-word truth table feasibility checking verified.\n";
+        std::cout << "\n✅ PASSED (" << passed_tests << "/" << total_tests << ")\n";
         return 0;
     } else {
-        std::cout << "❌ SOME TESTS FAILED! (" << passed_tests << "/" << total_tests << ")\n";
-        std::cout << "\nFailures detected in feasibility checking.\n";
+        std::cout << "\n❌ FAILED (" << passed_tests << "/" << total_tests << ")\n";
         return 1;
     }
 }

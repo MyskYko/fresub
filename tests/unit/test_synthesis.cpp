@@ -1,15 +1,7 @@
 #include "synthesis_bridge.hpp"
-#include "fresub_aig.hpp"
-#include "window.hpp"
 #include "feasibility.hpp"
 #include <iostream>
-#include <fstream>
-#include <algorithm>
-#include <map>
-#include <set>
 #include <vector>
-#include <bitset>
-#include <iomanip>
 #include <cassert>
 
 int total_tests = 0;
@@ -24,631 +16,443 @@ int passed_tests = 0;
     } \
 } while(0)
 
-using namespace fresub;
+// ============================================================================
+// Helper function to create synthesis input matrices
+// ============================================================================
 
-// Forward declarations
-void test_synthesis_integration_with_benchmark(const std::string& benchmark_file);
+struct SynthesisInput {
+    std::vector<std::vector<bool>> br;
+    std::vector<std::vector<bool>> sim;
+};
 
-// Utility functions for synthesis testing (merged from multiple tests)
-void print_node_vector(const std::vector<int>& nodes) {
-    std::cout << "[";
-    for (size_t i = 0; i < nodes.size(); i++) {
-        if (i > 0) std::cout << ", ";
-        std::cout << nodes[i];
-    }
-    std::cout << "]";
-}
-
-void print_truth_table(uint64_t tt, int num_inputs, const std::string& label = "") {
-    if (!label.empty()) std::cout << label << ": ";
-    int num_patterns = 1 << num_inputs;
-    for (int i = num_patterns - 1; i >= 0; i--) {
-        std::cout << ((tt >> i) & 1);
-    }
-    std::cout << " (0x" << std::hex << tt << std::dec << ")";
-}
-
-// Compute truth table for a node within a window (merged from multiple synthesis tests)
-uint64_t compute_truth_table_for_node_verbose(const AIG& aig, int node, 
-                                              const std::vector<int>& window_inputs,
-                                              const std::vector<int>& window_nodes,
-                                              bool verbose = false) {
+// Create synthesis input for a 2-input function
+SynthesisInput create_2input_function(const std::string& truth_table_bits) {
+    SynthesisInput input;
+    input.br.resize(4, std::vector<bool>(2));
+    input.sim.resize(4, std::vector<bool>(2));
     
-    if (verbose) {
-        std::cout << "    Computing truth table for node " << node << "\n";
+    // Set up binary relation based on truth table
+    for (int p = 0; p < 4; p++) {
+        bool output = (truth_table_bits[3-p] == '1'); // MSB first
+        input.br[p][output ? 1 : 0] = true;
+        
+        // Set input values: pattern p has bits (p&2, p&1)
+        input.sim[p][0] = (p & 2) != 0; // First input
+        input.sim[p][1] = (p & 1) != 0; // Second input
     }
     
-    int num_inputs = window_inputs.size();
-    if (num_inputs > 6) {
-        if (verbose) std::cout << "    Too many inputs (" << num_inputs << ") for 64-bit truth table\n";
-        return 0;
-    }
-    
-    int num_patterns = 1 << num_inputs;
-    std::map<int, uint64_t> node_tt;
-    
-    // Initialize primary input truth tables
-    for (int i = 0; i < num_inputs; i++) {
-        int pi = window_inputs[i];
-        uint64_t pattern = 0;
-        for (int p = 0; p < num_patterns; p++) {
-            if ((p >> i) & 1) {
-                pattern |= (1ULL << p);
-            }
-        }
-        node_tt[pi] = pattern;
-    }
-    
-    // Simulate internal nodes in topological order
-    for (int current_node : window_nodes) {
-        if (current_node <= aig.num_pis) continue;
-        if (current_node >= static_cast<int>(aig.nodes.size()) || aig.nodes[current_node].is_dead) continue;
-        
-        uint32_t fanin0_lit = aig.nodes[current_node].fanin0;
-        uint32_t fanin1_lit = aig.nodes[current_node].fanin1;
-        
-        int fanin0 = aig.lit2var(fanin0_lit);
-        int fanin1 = aig.lit2var(fanin1_lit);
-        
-        bool fanin0_compl = aig.is_complemented(fanin0_lit);
-        bool fanin1_compl = aig.is_complemented(fanin1_lit);
-        
-        if (node_tt.find(fanin0) == node_tt.end() || node_tt.find(fanin1) == node_tt.end()) {
-            continue;
-        }
-        
-        uint64_t tt0 = node_tt[fanin0];
-        uint64_t tt1 = node_tt[fanin1];
-        
-        if (fanin0_compl) tt0 = ~tt0 & ((1ULL << num_patterns) - 1);
-        if (fanin1_compl) tt1 = ~tt1 & ((1ULL << num_patterns) - 1);
-        
-        uint64_t result_tt = tt0 & tt1;
-        node_tt[current_node] = result_tt;
-        
-        if (verbose && current_node == node) {
-            std::cout << "      Node " << current_node << " = AND(";
-            std::cout << fanin0 << (fanin0_compl ? "'" : "") << ", ";
-            std::cout << fanin1 << (fanin1_compl ? "'" : "") << "): ";
-            print_truth_table(result_tt, num_inputs);
-            std::cout << "\n";
-        }
-    }
-    
-    return node_tt.find(node) != node_tt.end() ? node_tt[node] : 0;
-}
-
-// Mock conversion function for testing when actual bridge is not available
-void mock_convert_to_exopt_format(uint64_t target_tt, 
-                                  const std::vector<uint64_t>& divisor_tts,
-                                  const std::vector<int>& divisor_indices,
-                                  int num_inputs,
-                                  const std::vector<int>& window_inputs,
-                                  const std::vector<int>& window_divisors,
-                                  std::vector<std::vector<bool>>& br, 
-                                  std::vector<std::vector<bool>>& sim) {
-    
-    int num_patterns = 1 << num_inputs;
-    int num_divisors = divisor_indices.size();
-    
-    // Create binary relation matrix
-    br.resize(num_patterns);
-    for (int p = 0; p < num_patterns; p++) {
-        br[p].resize(1); // Single output
-        br[p][0] = (target_tt >> p) & 1;
-    }
-    
-    // Create simulation matrix
-    sim.resize(num_patterns);
-    for (int p = 0; p < num_patterns; p++) {
-        sim[p].resize(num_divisors);
-        for (int d = 0; d < num_divisors; d++) {
-            if (d < static_cast<int>(divisor_tts.size())) {
-                sim[p][d] = (divisor_tts[d] >> p) & 1;
-            } else {
-                sim[p][d] = false;
-            }
-        }
-    }
+    return input;
 }
 
 // ============================================================================
-// SECTION 1: Basic Synthesis Bridge Testing
-// Merged from: core/test_synthesis_integration.cpp + debug/test_synthesis_detailed.cpp
+// TEST 1: Basic Logic Functions
 // ============================================================================
 
-void test_synthesis_bridge_api() {
-    std::cout << "=== TESTING SYNTHESIS BRIDGE API ===\n";
-    std::cout << "Testing synthesis bridge functionality and API integration...\n";
+void test_basic_logic_functions() {
+    std::cout << "=== TESTING BASIC LOGIC FUNCTIONS ===\n";
     
-    // Create AIG with basic structure for synthesis testing
-    AIG aig;
-    aig.num_pis = 3;
-    aig.num_nodes = 6; // 0=const, 1-3=PIs, 4=1&2, 5=4&3
-    aig.nodes.resize(6);
+    struct TestCase {
+        std::string name;
+        std::string truth_table;
+        int expected_gates;
+    };
     
-    for (int i = 0; i < 6; i++) {
-        aig.nodes[i] = AIG::Node{0, 0, 0, {}, false};
-    }
+    std::vector<TestCase> test_cases = {
+        {"AND", "1000", 1},
+        {"OR",  "1110", 1}, 
+        {"XOR", "0110", 3},
+        {"NAND","0111", 1}
+    };
     
-    // Node 4: input1 & input2
-    aig.nodes[4].fanin0 = AIG::var2lit(1);
-    aig.nodes[4].fanin1 = AIG::var2lit(2);
-    
-    // Node 5: node4 & input3  
-    aig.nodes[5].fanin0 = AIG::var2lit(4);
-    aig.nodes[5].fanin1 = AIG::var2lit(3);
-    
-    aig.pos.push_back(AIG::var2lit(5));
-    aig.num_pos = 1;
-    
-    aig.build_fanouts();
-    aig.compute_levels();
-    
-    std::cout << "  Built test AIG: 3 PIs, 1 PO, 6 nodes\n";
-    std::cout << "    Node 4 = AND(PI1, PI2)\n";
-    std::cout << "    Node 5 = AND(Node4, PI3)\n";
-    
-    // Create window around node 5
-    Window window;
-    window.target_node = 5;
-    window.inputs = {1, 2, 3}; // Primary inputs
-    window.nodes = {1, 2, 3, 4, 5};
-    window.divisors = {1, 2, 3, 4}; // All inputs plus intermediate node as divisor
-    
-    std::cout << "  Window created with target=" << window.target_node 
-              << ", inputs=" << window.inputs.size() 
-              << ", divisors=" << window.divisors.size() << "\n";
-    
-    // Test feasibility first
-    FeasibilityResult feasibility = find_feasible_4resub(aig, window);
-    std::cout << "  Feasibility: " << (feasibility.found ? "FOUND" : "NOT FOUND") << "\n";
-    
-    if (feasibility.found) {
-        std::cout << "  Selected divisor indices: ";
-        for (int idx : feasibility.divisor_indices) {
-            std::cout << idx << " ";
-        }
-        std::cout << "\n";
+    for (const auto& test : test_cases) {
+        std::cout << "\n  Testing " << test.name << " function (TT: " << test.truth_table << ")\n";
         
-        // Compute truth tables for synthesis preparation
-        uint64_t target_tt = compute_truth_table_for_node_verbose(aig, window.target_node, 
-                                                                window.inputs, window.nodes);
-        std::vector<uint64_t> divisor_tts;
-        for (int divisor : window.divisors) {
-            uint64_t tt = compute_truth_table_for_node_verbose(aig, divisor, window.inputs, window.nodes);
-            divisor_tts.push_back(tt);
-        }
+        auto input = create_2input_function(test.truth_table);
         
-        std::cout << "  Target truth table: ";
-        print_truth_table(target_tt, window.inputs.size());
-        std::cout << "\n";
-        
-        // Test synthesis bridge conversion
-        std::vector<std::vector<bool>> br, sim;
         try {
-            // Always use mock for testing (synthesis bridge may not be available)
-            mock_convert_to_exopt_format(target_tt, divisor_tts, feasibility.divisor_indices,
-                                       window.inputs.size(), window.inputs, window.divisors, br, sim);
+            SynthesisResult result = synthesize_circuit(input.br, input.sim, 10);
+            std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             
-            ASSERT(!br.empty());
-            ASSERT(!sim.empty());
-            std::cout << "  ✓ Successfully converted to synthesis format\n";
-            std::cout << "    Binary relation: " << br.size() << " patterns\n";
-            std::cout << "    Simulation matrix: " << sim.size() << "x" << sim[0].size() << "\n";
-            
-            // Test synthesis call
-            try {
-                SynthesisResult synth_result = synthesize_circuit(br, sim, 4);
-                std::cout << "  Synthesis result: " << (synth_result.success ? "SUCCESS" : "FAILED") << "\n";
-                if (synth_result.success) {
-                    std::cout << "    Original gates: " << synth_result.original_gates << "\n";
-                    std::cout << "    Synthesized gates: " << synth_result.synthesized_gates << "\n";
-                    std::cout << "    Description: " << synth_result.description << "\n";
+            if (result.success) {
+                std::cout << " (" << result.synthesized_gates << " gates)";
+                if (test.expected_gates > 0) {
+                    ASSERT(result.synthesized_gates <= test.expected_gates + 1); // Allow some tolerance
                 }
-                ASSERT(true); // Test API works without crashing
-            } catch (const std::exception& e) {
-                std::cout << "  Note: Synthesis failed (may be expected): " << e.what() << "\n";
-                ASSERT(true); // Still pass - we tested the API
             }
+            std::cout << "\n";
+            ASSERT(result.success);
             
         } catch (const std::exception& e) {
-            std::cout << "  Note: Conversion failed (may be expected): " << e.what() << "\n";
-            ASSERT(true); // Still pass - we tested the API
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
         }
-        
-    } else {
-        std::cout << "  Skipping synthesis test (not feasible)\n";
-        ASSERT(true); // Still pass the test - we tested the API
     }
     
-    std::cout << "  ✓ Synthesis bridge API testing completed\n\n";
+    std::cout << "\n  ✓ Basic logic functions completed\n\n";
 }
 
-void test_edge_case_synthesis() {
-    std::cout << "=== TESTING EDGE CASE SYNTHESIS ===\n";
-    std::cout << "Testing synthesis with edge case scenarios...\n";
+// ============================================================================
+// TEST 2: Constant Functions
+// ============================================================================
+
+void test_constant_functions() {
+    std::cout << "=== TESTING CONSTANT FUNCTIONS ===\n";
     
-    // Test Case 1: Minimal window
+    // Test constant 0
     {
-        std::cout << "  Test 1: Minimal window synthesis\n";
+        std::cout << "\n  Testing constant 0\n";
+        std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
+        std::vector<std::vector<bool>> sim(2, std::vector<bool>(1));
         
-        std::cout << "    Window: 1 input, 1 divisor\n";
-        
-        // Mock minimal synthesis test
-        std::vector<std::vector<bool>> br = {{true}, {false}};
-        std::vector<std::vector<bool>> sim = {{true}, {false}};
+        br[0][0] = true;  br[0][1] = false;  // Input 0 -> Output 0
+        br[1][0] = true;  br[1][1] = false;  // Input 1 -> Output 0
+        sim[0][0] = false;
+        sim[1][0] = true;
         
         try {
-            SynthesisResult result = synthesize_circuit(br, sim, 1);
-            std::cout << "    Minimal synthesis: " << (result.success ? "SUCCESS" : "FAILED") << "\n";
-            ASSERT(true); // Test API works
+            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
+            if (result.success) {
+                std::cout << " (" << result.synthesized_gates << " gates)";
+            }
+            std::cout << "\n";
+            ASSERT(result.success);
         } catch (const std::exception& e) {
-            std::cout << "    Note: Minimal synthesis failed: " << e.what() << "\n";
-            ASSERT(true); // Expected for edge case
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
         }
     }
     
-    // Test Case 2: Empty synthesis (should fail gracefully)
+    // Test constant 1
     {
-        std::cout << "  Test 2: Empty synthesis matrices\n";
-        std::vector<std::vector<bool>> empty_br, empty_sim;
+        std::cout << "\n  Testing constant 1\n";
+        std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
+        std::vector<std::vector<bool>> sim(2, std::vector<bool>(1));
         
-        std::cout << "    Note: Skipping empty synthesis test (known to cause segfault)\n";
-        std::cout << "    Empty synthesis: SKIPPED (would segfault)\n";
-        ASSERT(true); // Skip test that would crash
+        br[0][1] = true;  // Input 0 -> Output 1
+        br[1][1] = true;  // Input 1 -> Output 1
+        sim[0][0] = false;
+        sim[1][0] = true;
+        
+        try {
+            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
+            if (result.success) {
+                std::cout << " (" << result.synthesized_gates << " gates)";
+            }
+            std::cout << "\n";
+            ASSERT(result.success);
+        } catch (const std::exception& e) {
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
+        }
     }
     
-    // Test Case 3: Large synthesis request
+    std::cout << "\n  ✓ Constant functions completed\n\n";
+}
+
+// ============================================================================
+// TEST 3: Multi-Input Functions
+// ============================================================================
+
+void test_multi_input_functions() {
+    std::cout << "=== TESTING MULTI-INPUT FUNCTIONS ===\n";
+    
+    // Test 4-input AND function
     {
-        std::cout << "  Test 3: Large synthesis request (performance test)\n";
+        std::cout << "\n  Testing 4-input AND function\n";
         
-        // Create large but valid synthesis request
-        int num_patterns = 16; // 4 inputs
-        std::vector<std::vector<bool>> br(num_patterns, std::vector<bool>(1));
+        int num_patterns = 16;
+        std::vector<std::vector<bool>> br(num_patterns, std::vector<bool>(2));
         std::vector<std::vector<bool>> sim(num_patterns, std::vector<bool>(4));
         
-        // Fill with simple pattern (AND of all inputs)
         for (int p = 0; p < num_patterns; p++) {
-            br[p][0] = (p == num_patterns - 1); // Only true when all inputs are 1
+            bool output = (p == 15); // Only true when all inputs are 1
+            br[p][output ? 1 : 0] = true;
+            
+            // Set input values
             for (int i = 0; i < 4; i++) {
                 sim[p][i] = (p >> i) & 1;
             }
         }
         
         try {
-            SynthesisResult result = synthesize_circuit(br, sim, 4);
-            std::cout << "    Large synthesis: " << (result.success ? "SUCCESS" : "FAILED") << "\n";
+            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
-                std::cout << "      Synthesized gates: " << result.synthesized_gates << "\n";
+                std::cout << " (" << result.synthesized_gates << " gates)";
+                ASSERT(result.synthesized_gates == 3); // 4-input AND needs exactly 3 gates
             }
-            ASSERT(true); // Performance test
+            std::cout << "\n";
+            ASSERT(result.success);
         } catch (const std::exception& e) {
-            std::cout << "    Large synthesis failed: " << e.what() << "\n";
-            ASSERT(true); // May fail due to complexity
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
         }
     }
     
-    std::cout << "  ✓ Edge case synthesis testing completed\n\n";
+    std::cout << "\n  ✓ Multi-input functions completed\n\n";
 }
 
 // ============================================================================
-// SECTION 2: Synthesis Integration Testing
-// Merged from: integration/test_full_synthesis.cpp + integration/test_synthesis_conversion.cpp
+// TEST 4: Error Conditions
 // ============================================================================
 
-void test_synthesis_with_window_extraction() {
-    std::cout << "=== TESTING SYNTHESIS WITH WINDOW EXTRACTION ===\n";
-    std::cout << "Testing integrated synthesis pipeline with window extraction...\n";
+void test_error_conditions() {
+    std::cout << "=== TESTING ERROR CONDITIONS ===\n";
     
-    // Create a more complex AIG for realistic synthesis testing
-    AIG aig;
-    aig.num_pis = 4;
-    aig.num_nodes = 8;
-    aig.nodes.resize(8);
-    
-    for (int i = 0; i < 8; i++) {
-        aig.nodes[i] = AIG::Node{0, 0, 0, {}, false};
-    }
-    
-    // Build structure: Create opportunities for synthesis
-    // Node 5 = AND(1, 2)    
-    // Node 6 = AND(3, 4)
-    // Node 7 = AND(5, 6)  - Target for synthesis
-    aig.nodes[5].fanin0 = AIG::var2lit(1);
-    aig.nodes[5].fanin1 = AIG::var2lit(2);
-    aig.nodes[6].fanin0 = AIG::var2lit(3);
-    aig.nodes[6].fanin1 = AIG::var2lit(4);
-    aig.nodes[7].fanin0 = AIG::var2lit(5);
-    aig.nodes[7].fanin1 = AIG::var2lit(6);
-    
-    aig.pos.push_back(AIG::var2lit(7));
-    aig.num_pos = 1;
-    
-    aig.build_fanouts();
-    aig.compute_levels();
-    
-    std::cout << "  Built complex AIG: 4 PIs, 1 PO, 8 nodes\n";
-    std::cout << "    Node 5 = AND(PI1, PI2)\n";
-    std::cout << "    Node 6 = AND(PI3, PI4)\n";
-    std::cout << "    Node 7 = AND(Node5, Node6)\n";
-    
-    // Extract windows and test synthesis integration
-    WindowExtractor extractor(aig, 4);
-    std::vector<Window> windows;
-    extractor.extract_all_windows(windows);
-    
-    std::cout << "  Extracted " << windows.size() << " windows\n";
-    ASSERT(!windows.empty());
-    
-    // Test synthesis on suitable windows
-    int synthesis_attempts = 0;
-    int synthesis_successes = 0;
-    
-    for (const auto& window : windows) {
-        if (window.inputs.size() >= 2 && window.inputs.size() <= 4 && 
-            window.divisors.size() >= 2) {
-            
-            synthesis_attempts++;
-            std::cout << "  Testing synthesis for window " << synthesis_attempts << " (target=" << window.target_node << "):\n";
-            std::cout << "    Inputs: ";
-            print_node_vector(window.inputs);
-            std::cout << " (" << window.inputs.size() << " inputs)\n";
-            
-            // Check feasibility first
-            FeasibilityResult feasibility = find_feasible_4resub(aig, window);
-            if (feasibility.found) {
-                std::cout << "    ✓ Feasible - attempting synthesis...\n";
-                
-                // Prepare synthesis data
-                uint64_t target_tt = compute_truth_table_for_node_verbose(aig, window.target_node, 
-                                                                       window.inputs, window.nodes);
-                std::vector<uint64_t> divisor_tts;
-                for (int divisor : window.divisors) {
-                    uint64_t tt = compute_truth_table_for_node_verbose(aig, divisor, window.inputs, window.nodes);
-                    divisor_tts.push_back(tt);
-                }
-                
-                std::vector<std::vector<bool>> br, sim;
-                try {
-                    mock_convert_to_exopt_format(target_tt, divisor_tts, feasibility.divisor_indices,
-                                               window.inputs.size(), window.inputs, window.divisors, br, sim);
-                    
-                    // Attempt synthesis
-                    SynthesisResult synth_result = synthesize_circuit(br, sim, 4);
-                    if (synth_result.success) {
-                        synthesis_successes++;
-                        std::cout << "      ✓ Synthesis SUCCESS - gates: " << synth_result.synthesized_gates << "\n";
-                    } else {
-                        std::cout << "      ✗ Synthesis failed: " << synth_result.description << "\n";
-                    }
-                    
-                } catch (const std::exception& e) {
-                    std::cout << "      ✗ Synthesis error: " << e.what() << "\n";
-                }
-                
-            } else {
-                std::cout << "    ✗ Not feasible - skipping synthesis\n";
-            }
-            
-            if (synthesis_attempts >= 3) break; // Limit for readability
-        }
-    }
-    
-    std::cout << "  Summary: " << synthesis_successes << "/" << synthesis_attempts << " synthesis attempts succeeded\n";
-    ASSERT(synthesis_attempts > 0);
-    std::cout << "  ✓ Integrated synthesis pipeline testing completed\n\n";
-}
-
-void test_synthesis_conversion_formats() {
-    std::cout << "=== TESTING SYNTHESIS CONVERSION FORMATS ===\n";
-    std::cout << "Testing conversion between internal and synthesis formats...\n";
-    
-    // Test different truth table patterns and their conversion
-    struct TestCase {
-        std::string name;
-        uint64_t target_tt;
-        std::vector<uint64_t> divisor_tts;
-        std::vector<int> divisor_indices;
-        int num_inputs;
-    } test_cases[] = {
-        {"AND function", 0x8, {0xC, 0xA}, {0, 1}, 2},  // target=a&b, divisors=[a,b]
-        {"OR function", 0xE, {0xC, 0xA}, {0, 1}, 2},   // target=a|b, divisors=[a,b]
-        {"XOR function", 0x6, {0xC, 0xA}, {0, 1}, 2},  // target=a^b, divisors=[a,b]
-        {"Complex 3-input", 0xE8, {0xF0, 0xCC, 0xAA}, {0, 1, 2}, 3} // 3-input function
-    };
-    
-    for (const auto& test_case : test_cases) {
-        std::cout << "  Testing " << test_case.name << ":\n";
-        std::cout << "    Target TT: ";
-        print_truth_table(test_case.target_tt, test_case.num_inputs);
-        std::cout << "\n";
+    // Test impossible synthesis (gate limit too low)
+    {
+        std::cout << "\n  Testing impossible synthesis (XOR with 1 gate limit)\n";
         
-        // Test conversion
-        std::vector<std::vector<bool>> br, sim;
-        std::vector<int> dummy_inputs, dummy_divisors;
+        auto input = create_2input_function("0110"); // XOR needs 3+ gates
         
         try {
-            mock_convert_to_exopt_format(test_case.target_tt, test_case.divisor_tts, test_case.divisor_indices,
-                                       test_case.num_inputs, dummy_inputs, dummy_divisors, br, sim);
-            
-            std::cout << "    ✓ Conversion successful: " << br.size() << " patterns, " 
-                      << sim[0].size() << " divisors\n";
-            
-            // Test synthesis on converted data
-            try {
-                SynthesisResult result = synthesize_circuit(br, sim, 4);
-                std::cout << "    Synthesis: " << (result.success ? "SUCCESS" : "FAILED");
-                if (result.success) {
-                    std::cout << " (" << result.synthesized_gates << " gates)";
-                }
-                std::cout << "\n";
-                
-            } catch (const std::exception& e) {
-                std::cout << "    Synthesis failed: " << e.what() << "\n";
-            }
-            
-            ASSERT(!br.empty() && !sim.empty());
-            
+            SynthesisResult result = synthesize_circuit(input.br, input.sim, 1); // Only 1 gate
+            std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED") << "\n";
+            ASSERT(!result.success); // Should fail due to gate limit
         } catch (const std::exception& e) {
-            std::cout << "    ✗ Conversion failed: " << e.what() << "\n";
-            ASSERT(true); // May fail for unsupported formats
+            std::cout << "    Expected failure: " << e.what() << "\n";
+            ASSERT(true); // Exception is acceptable
         }
     }
     
-    std::cout << "  ✓ Synthesis conversion format testing completed\n\n";
+    std::cout << "\n  ✓ Error condition testing completed\n\n";
 }
 
 // ============================================================================
-// SECTION 3: Benchmark-based Synthesis Testing
-// Merged from: integration/test_full_synthesis.cpp (benchmark portions)
+// TEST 5: Conversion Function
 // ============================================================================
 
-void test_synthesis_integration_with_benchmark(const std::string& benchmark_file) {
-    std::cout << "=== TESTING SYNTHESIS WITH REAL BENCHMARK ===\n";
-    std::cout << "Testing synthesis integration on real benchmark circuit...\n";
+void test_conversion_function() {
+    std::cout << "=== TESTING TRUTH TABLE CONVERSION ===\n";
     
-    try {
-        std::cout << "  Loading benchmark: " << benchmark_file << "...\n";
-        AIG aig(benchmark_file);
+    // Test 1: Simple AND function conversion
+    {
+        std::cout << "\n  Testing AND function conversion\n";
         
-        std::cout << "    ✓ Loaded AIG: " << aig.num_pis << " PIs, " 
-                  << aig.num_pos << " POs, " << aig.num_nodes << " nodes\n";
+        std::vector<uint64_t> target_tt = {0x8}; // AND: 1000 (single word)
+        std::vector<std::vector<uint64_t>> divisor_tts = {{0x3}, {0x5}}; // Inputs: 0011, 0101 (single word each)
+        std::vector<int> selected_divisors = {0, 1};
+        int num_inputs = 2;
+        std::vector<int> window_inputs = {1, 2};
+        std::vector<int> all_divisors = {1, 2};
         
-        // Extract windows for synthesis testing
-        WindowExtractor extractor(aig, 4);
-        std::vector<Window> windows;
-        extractor.extract_all_windows(windows);
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
         
-        std::cout << "    ✓ Extracted " << windows.size() << " windows\n";
+        ASSERT(br.size() == 4);
+        ASSERT(br[0].size() == 2);
+        ASSERT(sim.size() == 4);
+        ASSERT(sim[0].size() == 0); // All divisors are inputs
         
-        // Test synthesis on a subset of windows
-        int synthesis_attempts = 0;
-        int synthesis_successes = 0;
-        int total_original_gates = 0;
-        int total_synthesized_gates = 0;
-        
-        for (const auto& window : windows) {
-            if (window.inputs.size() <= 4 && synthesis_attempts < 10) { // Limit for performance
-                
-                FeasibilityResult feasibility = find_feasible_4resub(aig, window);
-                if (feasibility.found) {
-                    synthesis_attempts++;
-                    
-                    try {
-                        // Prepare synthesis data
-                        uint64_t target_tt = compute_truth_table_for_node_verbose(aig, window.target_node, 
-                                                                               window.inputs, window.nodes);
-                        std::vector<uint64_t> divisor_tts;
-                        for (int divisor : window.divisors) {
-                            uint64_t tt = compute_truth_table_for_node_verbose(aig, divisor, window.inputs, window.nodes);
-                            divisor_tts.push_back(tt);
-                        }
-                        
-                        std::vector<std::vector<bool>> br, sim;
-                        mock_convert_to_exopt_format(target_tt, divisor_tts, feasibility.divisor_indices,
-                                                   window.inputs.size(), window.inputs, window.divisors, br, sim);
-                        
-                        // Attempt synthesis
-                        SynthesisResult synth_result = synthesize_circuit(br, sim, 4);
-                        if (synth_result.success) {
-                            synthesis_successes++;
-                            total_original_gates += synth_result.original_gates;
-                            total_synthesized_gates += synth_result.synthesized_gates;
-                            
-                            if (synthesis_successes <= 3) { // Show details for first few
-                                std::cout << "  Synthesis Success " << synthesis_successes << ":\n";
-                                std::cout << "    Target: " << window.target_node << ", Inputs: " << window.inputs.size() << "\n";
-                                std::cout << "    Original gates: " << synth_result.original_gates 
-                                          << ", Synthesized: " << synth_result.synthesized_gates << "\n";
-                            }
-                        }
-                        
-                    } catch (const std::exception& e) {
-                        // Synthesis failure is OK - we're testing the pipeline
-                    }
-                }
-            }
-        }
-        
-        // Summary statistics
-        std::cout << "\n  BENCHMARK SYNTHESIS SUMMARY:\n";
-        std::cout << "    Synthesis attempts: " << synthesis_attempts << "\n";
-        std::cout << "    Successful syntheses: " << synthesis_successes << "/" << synthesis_attempts;
-        if (synthesis_attempts > 0) {
-            std::cout << " (" << std::fixed << std::setprecision(1) 
-                      << (100.0 * synthesis_successes / synthesis_attempts) << "%)\n";
-        } else {
-            std::cout << "\n";
-        }
-        
-        if (synthesis_successes > 0) {
-            std::cout << "    Average original gates: " << (total_original_gates / synthesis_successes) << "\n";
-            std::cout << "    Average synthesized gates: " << (total_synthesized_gates / synthesis_successes) << "\n";
-            double improvement = 100.0 * (total_original_gates - total_synthesized_gates) / total_original_gates;
-            std::cout << "    Gate reduction: " << std::fixed << std::setprecision(1) << improvement << "%\n";
-        }
-        
-        ASSERT(synthesis_attempts > 0 || windows.size() == 0);
-        std::cout << "    ✓ Benchmark synthesis integration completed\n";
-        
-    } catch (const std::exception& e) {
-        std::cout << "  Note: Could not test with " << benchmark_file 
-                  << " (file not found), skipping benchmark synthesis test...\n";
-        std::cout << "  This test requires a valid benchmark file to demonstrate\n";
-        std::cout << "  synthesis integration on real circuits.\n";
-        ASSERT(true); // Don't fail test due to missing file
-        return;
+        std::cout << "    ✓ Conversion successful (" << br.size() << " patterns)\n";
     }
     
-    std::cout << "  ✓ Real benchmark synthesis testing completed\n\n";
+    // Test 2: Function with internal divisors
+    {
+        std::cout << "\n  Testing function with internal divisors\n";
+        
+        std::vector<uint64_t> target_tt = {0xF}; // All ones (single word)
+        std::vector<std::vector<uint64_t>> divisor_tts = {{0x3}, {0x5}, {0x1}, {0x7}}; // Single word each
+        std::vector<int> selected_divisors = {0, 1, 2, 3};
+        int num_inputs = 2;
+        std::vector<int> window_inputs = {1, 2}; // Only first two are inputs
+        std::vector<int> all_divisors = {1, 2, 5, 6}; // 5,6 are internal
+        
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
+        
+        ASSERT(br.size() == 4);
+        ASSERT(sim.size() == 4);
+        ASSERT(sim[0].size() == 2); // Two internal divisors
+        
+        std::cout << "    ✓ Conversion successful (" << sim[0].size() << " internal divisors)\n";
+    }
+    
+    // Test 3: Multi-word truth table (7 inputs, 2 words)
+    {
+        std::cout << "\n  Testing multi-word truth table (7 inputs)\n";
+        
+        int num_inputs = 7;
+        std::vector<uint64_t> target_tt = {0x5555555555555555ULL, 0x3333333333333333ULL}; // 2 words
+        std::vector<std::vector<uint64_t>> divisor_tts = {
+            {0x3333333333333333ULL, 0x5555555555555555ULL}, // Divisor 0: 2 words
+            {0x0F0F0F0F0F0F0F0FULL, 0x00FF00FF00FF00FFULL}, // Divisor 1: 2 words  
+            {0x00000000FFFFFFFFULL, 0x0000FFFF0000FFFFULL}  // Divisor 2: 2 words
+        };
+        std::vector<int> selected_divisors = {0, 1, 2};
+        std::vector<int> window_inputs = {1, 2, 3, 4, 5, 6, 7}; // All are inputs
+        std::vector<int> all_divisors = {1, 2, 3}; // First 3 correspond to some inputs
+        
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
+        
+        ASSERT(br.size() == 128); // 2^7 patterns
+        ASSERT(br[0].size() == 2);
+        ASSERT(sim.size() == 128);
+        ASSERT(sim[0].size() == 0); // All divisors are inputs (filtered out)
+        
+        std::cout << "    ✓ Multi-word conversion successful (" << br.size() << " patterns)\n";
+    }
+    
+    std::cout << "\n  ✓ Conversion testing completed\n\n";
+}
+
+// ============================================================================
+// TEST 6: End-to-End Pipeline (Convert → Synthesis)
+// ============================================================================
+
+void test_end_to_end_pipeline() {
+    std::cout << "=== TESTING END-TO-END PIPELINE ===\n";
+    std::cout << "Testing truth tables → convert → synthesis pipeline...\n";
+    
+    // Test Case 1: Simple 2-input AND with manual truth tables
+    {
+        std::cout << "\n  Test 1: 2-input AND function pipeline\n";
+        
+        // Manual truth tables for 2-input AND
+        std::vector<uint64_t> target_tt = {0x8}; // AND: 1000
+        std::vector<std::vector<uint64_t>> divisor_tts = {
+            {0xC}, // Input A: 1100  
+            {0xA}  // Input B: 1010
+        };
+        std::vector<int> selected_divisors = {0, 1};
+        int num_inputs = 2;
+        std::vector<int> window_inputs = {1, 2}; // Both are inputs
+        std::vector<int> all_divisors = {1, 2};
+        
+        // Step 1: Convert truth tables to synthesis format
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
+        
+        std::cout << "    Step 1: ✓ Conversion successful\n";
+        std::cout << "      Binary relation: " << br.size() << " patterns\n";
+        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << "\n";
+        
+        // Step 2: Synthesize circuit
+        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        
+        std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
+        if (result.success) {
+            std::cout << " (" << result.synthesized_gates << " gates)";
+            ASSERT(result.synthesized_gates == 1); // AND should be 1 gate
+        }
+        std::cout << "\n";
+        ASSERT(result.success);
+    }
+    
+    // Test Case 2: 3-input function with internal divisors
+    {
+        std::cout << "\n  Test 2: 3-input function with internal divisors\n";
+        
+        // Manual truth tables for 3-input case
+        std::vector<uint64_t> target_tt = {0xFE}; // Complex 3-input function: 11111110
+        std::vector<std::vector<uint64_t>> divisor_tts = {
+            {0xF0}, // Divisor 0: 11110000
+            {0xCC}, // Divisor 1: 11001100  
+            {0xAA}, // Divisor 2: 10101010
+            {0x80}  // Divisor 3: 10000000 (internal, not an input)
+        };
+        std::vector<int> selected_divisors = {0, 1, 2, 3};
+        int num_inputs = 3;
+        std::vector<int> window_inputs = {1, 2, 3}; // First 3 are inputs
+        std::vector<int> all_divisors = {1, 2, 3, 5}; // 5 is internal node
+        
+        // Step 1: Convert 
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
+        
+        std::cout << "    Step 1: ✓ Conversion successful\n";
+        std::cout << "      Binary relation: " << br.size() << " patterns\n";
+        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << " (1 internal divisor)\n";
+        
+        ASSERT(br.size() == 8); // 2^3 patterns
+        ASSERT(sim[0].size() == 1); // 1 internal divisor
+        
+        // Step 2: Synthesize
+        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        
+        std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
+        if (result.success) {
+            std::cout << " (" << result.synthesized_gates << " gates)";
+        }
+        std::cout << "\n";
+        ASSERT(result.success);
+    }
+    
+    // Test Case 3: Multi-word truth table pipeline (7 inputs)
+    {
+        std::cout << "\n  Test 3: Multi-word pipeline (7 inputs)\n";
+        
+        // Multi-word truth tables (7 inputs = 128 patterns = 2 words)
+        std::vector<uint64_t> target_tt = {0x0000000000000001ULL, 0x0000000000000000ULL}; // Only pattern 0 → 1
+        std::vector<std::vector<uint64_t>> divisor_tts = {
+            {0xAAAAAAAAAAAAAAAAULL, 0xAAAAAAAAAAAAAAAAULL}, // Input pattern
+            {0xCCCCCCCCCCCCCCCCULL, 0xCCCCCCCCCCCCCCCCULL}, // Input pattern
+            {0xF0F0F0F0F0F0F0F0ULL, 0xF0F0F0F0F0F0F0F0ULL}  // Input pattern
+        };
+        std::vector<int> selected_divisors = {0, 1, 2};
+        int num_inputs = 7;
+        std::vector<int> window_inputs = {1, 2, 3, 4, 5, 6, 7}; // All inputs
+        std::vector<int> all_divisors = {1, 2, 3}; // Correspond to some inputs
+        
+        // Step 1: Convert multi-word truth tables
+        std::vector<std::vector<bool>> br, sim;
+        convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
+                               num_inputs, window_inputs, all_divisors, br, sim);
+        
+        std::cout << "    Step 1: ✓ Multi-word conversion successful\n";
+        std::cout << "      Binary relation: " << br.size() << " patterns\n";
+        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << "\n";
+        
+        ASSERT(br.size() == 128); // 2^7 patterns
+        ASSERT(sim[0].size() == 0); // All divisors are inputs
+        
+        // Step 2: Synthesize (should be constant 0 function since only pattern 0 → 1)
+        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        
+        std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
+        if (result.success) {
+            std::cout << " (" << result.synthesized_gates << " gates)";
+        }
+        std::cout << "\n";
+        ASSERT(result.success);
+    }
+    
+    std::cout << "\n  ✓ End-to-end pipeline testing completed\n\n";
 }
 
 // ============================================================================
 // MAIN TEST DRIVER
 // ============================================================================
 
-int main(int argc, char* argv[]) {
+int main() {
     std::cout << "========================================\n";
     std::cout << "        SYNTHESIS TEST SUITE           \n";
-    std::cout << "========================================\n";
-    std::cout << "Consolidated test covering:\n";
-    std::cout << "• Basic synthesis bridge API and integration\n";
-    std::cout << "• Edge case synthesis scenarios\n";
-    std::cout << "• Synthesis with window extraction pipeline\n";
-    std::cout << "• Truth table to synthesis format conversion\n";
-    std::cout << "• Real benchmark synthesis integration\n\n";
+    std::cout << "========================================\n\n";
     
-    // Determine benchmark file
-    std::string benchmark_file = "../benchmarks/mul2.aig";
-    if (argc > 1) {
-        benchmark_file = argv[1];
-    }
+    test_basic_logic_functions();
+    test_constant_functions();
+    test_multi_input_functions();
+    test_error_conditions();
+    test_conversion_function();
+    test_end_to_end_pipeline();
     
-    // Section 1: Basic synthesis testing
-    test_synthesis_bridge_api();
-    test_edge_case_synthesis();
-    
-    // Section 2: Integration testing
-    test_synthesis_with_window_extraction();
-    test_synthesis_conversion_formats();
-    
-    // Section 3: Benchmark testing
-    test_synthesis_integration_with_benchmark(benchmark_file);
-    
-    // Final results
     std::cout << "========================================\n";
     std::cout << "         TEST RESULTS SUMMARY          \n";
     std::cout << "========================================\n";
     
     if (passed_tests == total_tests) {
-        std::cout << "🎉 ALL TESTS PASSED! (" << passed_tests << "/" << total_tests << ")\n";
-        std::cout << "\nSynthesis test suite completed successfully.\n";
-        std::cout << "All synthesis bridge and integration functions verified.\n";
+        std::cout << "🎉 ALL TESTS PASSED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 0;
     } else {
-        std::cout << "❌ SOME TESTS FAILED! (" << passed_tests << "/" << total_tests << ")\n";
-        std::cout << "\nFailures detected in synthesis testing.\n";
+        std::cout << "❌ TESTS FAILED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 1;
     }
 }

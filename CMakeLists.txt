@@ -29,12 +29,9 @@ add_subdirectory(lib/exopt)
 
 # Source files - separate library sources from main
 set(CPU_LIB_SOURCES
-    src/cpu/fresub_aig.cpp
     src/cpu/window.cpp
     src/cpu/feasibility.cpp
     src/cpu/synthesis_bridge.cpp
-    src/cpu/aig_insertion.cpp
-    src/cpu/aig_converter.cpp
     src/cpu/conflict.cpp
 )
 
@@ -58,14 +55,14 @@ set_target_properties(fresub_cuda PROPERTIES
     CUDA_RESOLVE_DEVICE_SYMBOLS OFF
 )
 
-# Main executable - clean resubstitution engine
-add_executable(fresub src/cpu/main_resubstitution.cpp)
+# Main executable - clean resubstitution engine (DISABLED)
+# add_executable(fresub src/cpu/main_resubstitution.cpp)
 
 # Link libraries - includes come automatically from fresub_cpu's dependencies
-target_link_libraries(fresub
-    fresub_cpu
-    Threads::Threads
-)
+# target_link_libraries(fresub
+#     fresub_cpu
+#     Threads::Threads
+# )
 
 # Note: The nvlink warnings about system libraries (librt, libpthread, libdl) 
 # are harmless and expected. They occur because nvlink skips CPU-only libraries
@@ -91,13 +88,13 @@ target_compile_options(fresub_cuda PRIVATE
 
 # Test executables moved to tests/ directory
 
-# Optional: Add tests
+# Optional: Add tests (WINDOW TEST ONLY)
 option(BUILD_TESTS "Build tests" ON)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-# Installation
-install(TARGETS fresub DESTINATION bin)
-install(DIRECTORY include/ DESTINATION include/fresub)
+# Installation (DISABLED)
+# install(TARGETS fresub DESTINATION bin)
+# install(DIRECTORY include/ DESTINATION include/fresub)

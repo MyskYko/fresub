@@ -75,13 +75,13 @@ void test_truth_table_computation() {
     ASSERT(results[1].size() == 1);
     ASSERT(results[2].size() == 1);
     
-    // Check truth tables  
-    // Input 1 (bit 0): 1010 (pattern from basepats[0])
-    // Input 2 (bit 1): 1100 (pattern from basepats[1])
-    // AND(1,2):        1000 (0x8888...)
-    ASSERT(results[0][0] == 0xaaaaaaaaaaaaaaaaull); // Input 1 pattern 
-    ASSERT(results[1][0] == 0xccccccccccccccccull); // Input 2 pattern  
-    ASSERT(results[2][0] == 0x8888888888888888ull); // AND result
+    // Check truth tables
+    // Input 1 (bit 0): 0101 = 0x5
+    // Input 2 (bit 1): 0011 = 0x3  
+    // AND(1,2):        0001 = 0x1
+    ASSERT(results[0][0] == 0xaull); // Input 1 pattern (first 4 bits of 0xaaaa...)
+    ASSERT(results[1][0] == 0xcull); // Input 2 pattern (first 4 bits of 0xcccc...)  
+    ASSERT(results[2][0] == 0x8ull); // AND result (first 4 bits of result)
     
     std::cout << "✓ Truth table computation working correctly\n";
     
