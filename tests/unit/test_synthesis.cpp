@@ -22,23 +22,17 @@ int passed_tests = 0;
 
 struct SynthesisInput {
     std::vector<std::vector<bool>> br;
-    std::vector<std::vector<bool>> sim;
 };
 
 // Create synthesis input for a 2-input function
 SynthesisInput create_2input_function(const std::string& truth_table_bits) {
     SynthesisInput input;
     input.br.resize(4, std::vector<bool>(2));
-    input.sim.resize(4, std::vector<bool>(2));
     
     // Set up binary relation based on truth table
     for (int p = 0; p < 4; p++) {
         bool output = (truth_table_bits[3-p] == '1'); // MSB first
         input.br[p][output ? 1 : 0] = true;
-        
-        // Set input values: pattern p has bits (p&2, p&1)
-        input.sim[p][0] = (p & 2) != 0; // First input
-        input.sim[p][1] = (p & 1) != 0; // Second input
     }
     
     return input;
@@ -70,7 +64,7 @@ void test_basic_logic_functions() {
         auto input = create_2input_function(test.truth_table);
         
         try {
-            SynthesisResult result = synthesize_circuit(input.br, input.sim, 10);
+            SynthesisResult result = synthesize_circuit(input.br, {}, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             
             if (result.success) {
@@ -102,15 +96,12 @@ void test_constant_functions() {
     {
         std::cout << "\n  Testing constant 0\n";
         std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
-        std::vector<std::vector<bool>> sim(2, std::vector<bool>(1));
         
         br[0][0] = true;  br[0][1] = false;  // Input 0 -> Output 0
         br[1][0] = true;  br[1][1] = false;  // Input 1 -> Output 0
-        sim[0][0] = false;
-        sim[1][0] = true;
         
         try {
-            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            SynthesisResult result = synthesize_circuit(br, {}, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -127,15 +118,12 @@ void test_constant_functions() {
     {
         std::cout << "\n  Testing constant 1\n";
         std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
-        std::vector<std::vector<bool>> sim(2, std::vector<bool>(1));
         
         br[0][1] = true;  // Input 0 -> Output 1
         br[1][1] = true;  // Input 1 -> Output 1
-        sim[0][0] = false;
-        sim[1][0] = true;
         
         try {
-            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            SynthesisResult result = synthesize_circuit(br, {}, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -164,20 +152,14 @@ void test_multi_input_functions() {
         
         int num_patterns = 16;
         std::vector<std::vector<bool>> br(num_patterns, std::vector<bool>(2));
-        std::vector<std::vector<bool>> sim(num_patterns, std::vector<bool>(4));
         
         for (int p = 0; p < num_patterns; p++) {
             bool output = (p == 15); // Only true when all inputs are 1
             br[p][output ? 1 : 0] = true;
-            
-            // Set input values
-            for (int i = 0; i < 4; i++) {
-                sim[p][i] = (p >> i) & 1;
-            }
         }
         
         try {
-            SynthesisResult result = synthesize_circuit(br, sim, 10);
+            SynthesisResult result = synthesize_circuit(br, {}, 10);
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED");
             if (result.success) {
                 std::cout << " (" << result.synthesized_gates << " gates)";
@@ -208,7 +190,7 @@ void test_error_conditions() {
         auto input = create_2input_function("0110"); // XOR needs 3+ gates
         
         try {
-            SynthesisResult result = synthesize_circuit(input.br, input.sim, 1); // Only 1 gate
+            SynthesisResult result = synthesize_circuit(input.br, {}, 1); // Only 1 gate
             std::cout << "    Result: " << (result.success ? "SUCCESS" : "FAILED") << "\n";
             ASSERT(!result.success); // Should fail due to gate limit
         } catch (const std::exception& e) {
@@ -238,14 +220,12 @@ void test_conversion_function() {
         std::vector<int> window_inputs = {1, 2};
         std::vector<int> all_divisors = {1, 2};
         
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
         ASSERT(br.size() == 4);
         ASSERT(br[0].size() == 2);
-        ASSERT(sim.size() == 4);
-        ASSERT(sim[0].size() == 0); // All divisors are inputs
         
         std::cout << "    ✓ Conversion successful (" << br.size() << " patterns)\n";
     }
@@ -258,18 +238,14 @@ void test_conversion_function() {
         std::vector<std::vector<uint64_t>> divisor_tts = {{0x3}, {0x5}, {0x1}, {0x7}}; // Single word each
         std::vector<int> selected_divisors = {0, 1, 2, 3};
         int num_inputs = 2;
-        std::vector<int> window_inputs = {1, 2}; // Only first two are inputs
-        std::vector<int> all_divisors = {1, 2, 5, 6}; // 5,6 are internal
         
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
-        ASSERT(br.size() == 4);
-        ASSERT(sim.size() == 4);
-        ASSERT(sim[0].size() == 2); // Two internal divisors
+        ASSERT(br.size() == 16);
         
-        std::cout << "    ✓ Conversion successful (" << sim[0].size() << " internal divisors)\n";
+        std::cout << "    ✓ Conversion successful (" << " internal divisors)\n";
     }
     
     // Test 3: Multi-word truth table (7 inputs, 2 words)
@@ -284,17 +260,13 @@ void test_conversion_function() {
             {0x00000000FFFFFFFFULL, 0x0000FFFF0000FFFFULL}  // Divisor 2: 2 words
         };
         std::vector<int> selected_divisors = {0, 1, 2};
-        std::vector<int> window_inputs = {1, 2, 3, 4, 5, 6, 7}; // All are inputs
-        std::vector<int> all_divisors = {1, 2, 3}; // First 3 correspond to some inputs
         
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
-        ASSERT(br.size() == 128); // 2^7 patterns
+        ASSERT(br.size() == 8); // 2^7 patterns
         ASSERT(br[0].size() == 2);
-        ASSERT(sim.size() == 128);
-        ASSERT(sim[0].size() == 0); // All divisors are inputs (filtered out)
         
         std::cout << "    ✓ Multi-word conversion successful (" << br.size() << " patterns)\n";
     }
@@ -322,20 +294,17 @@ void test_end_to_end_pipeline() {
         };
         std::vector<int> selected_divisors = {0, 1};
         int num_inputs = 2;
-        std::vector<int> window_inputs = {1, 2}; // Both are inputs
-        std::vector<int> all_divisors = {1, 2};
         
         // Step 1: Convert truth tables to synthesis format
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
         std::cout << "    Step 1: ✓ Conversion successful\n";
         std::cout << "      Binary relation: " << br.size() << " patterns\n";
-        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << "\n";
         
         // Step 2: Synthesize circuit
-        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        SynthesisResult result = synthesize_circuit(br, {}, 10);
         
         std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
         if (result.success) {
@@ -360,23 +329,19 @@ void test_end_to_end_pipeline() {
         };
         std::vector<int> selected_divisors = {0, 1, 2, 3};
         int num_inputs = 3;
-        std::vector<int> window_inputs = {1, 2, 3}; // First 3 are inputs
-        std::vector<int> all_divisors = {1, 2, 3, 5}; // 5 is internal node
         
         // Step 1: Convert 
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
         std::cout << "    Step 1: ✓ Conversion successful\n";
         std::cout << "      Binary relation: " << br.size() << " patterns\n";
-        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << " (1 internal divisor)\n";
         
-        ASSERT(br.size() == 8); // 2^3 patterns
-        ASSERT(sim[0].size() == 1); // 1 internal divisor
+        ASSERT(br.size() == 16); // 2^4 patterns
         
         // Step 2: Synthesize
-        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        SynthesisResult result = synthesize_circuit(br, {}, 10);
         
         std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
         if (result.success) {
@@ -399,30 +364,26 @@ void test_end_to_end_pipeline() {
         };
         std::vector<int> selected_divisors = {0, 1, 2};
         int num_inputs = 7;
-        std::vector<int> window_inputs = {1, 2, 3, 4, 5, 6, 7}; // All inputs
-        std::vector<int> all_divisors = {1, 2, 3}; // Correspond to some inputs
         
         // Step 1: Convert multi-word truth tables
-        std::vector<std::vector<bool>> br, sim;
+        std::vector<std::vector<bool>> br;
         convert_to_exopt_format(target_tt, divisor_tts, selected_divisors,
-                               num_inputs, window_inputs, all_divisors, br, sim);
+                               num_inputs, br);
         
         std::cout << "    Step 1: ✓ Multi-word conversion successful\n";
         std::cout << "      Binary relation: " << br.size() << " patterns\n";
-        std::cout << "      Simulation matrix: " << sim.size() << "x" << sim[0].size() << "\n";
         
-        ASSERT(br.size() == 128); // 2^7 patterns
-        ASSERT(sim[0].size() == 0); // All divisors are inputs
+        ASSERT(br.size() == 8); // 2^3 patterns
         
-        // Step 2: Synthesize (should be constant 0 function since only pattern 0 → 1)
-        SynthesisResult result = synthesize_circuit(br, sim, 10);
+        // Step 2: Synthesize (should fail - this is an infeasible synthesis)
+        SynthesisResult result = synthesize_circuit(br, {}, 10);
         
-        std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED");
+        std::cout << "    Step 2: " << (result.success ? "✓ Synthesis SUCCESS" : "✗ Synthesis FAILED (expected)");
         if (result.success) {
-            std::cout << " (" << result.synthesized_gates << " gates)";
+            std::cout << " (unexpected success with " << result.synthesized_gates << " gates)";
         }
         std::cout << "\n";
-        ASSERT(result.success);
+        ASSERT(!result.success); // Should fail
     }
     
     std::cout << "\n  ✓ End-to-end pipeline testing completed\n\n";

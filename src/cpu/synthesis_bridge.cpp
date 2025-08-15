@@ -15,11 +15,14 @@ SynthesisResult synthesize_circuit(const vector<vector<bool>>& br,
     result.synthesized_gates = 0;
     result.internal_aigman = nullptr;
     
-    // Create synthesis manager
-    SynthMan<KissatSolver> synth_man(br, &sim);
+    // Create synthesis manager - pass NULL for sim since we don't use it
+    SynthMan<KissatSolver> synth_man(br, nullptr);
     
     // Attempt synthesis
-    aigman* aig = synth_man.ExSynth(max_gates);
+    aigman* aig = nullptr;
+    for(int i = 0; !aig && i < max_gates; i++) {
+      aig = synth_man.Synth(i);
+    }
     
     if (aig) {
         result.success = true;
@@ -50,53 +53,46 @@ void convert_to_exopt_format(const vector<uint64_t>& target_tt,
                             const vector<vector<uint64_t>>& divisor_tts,
                             const vector<int>& selected_divisors,
                             int num_inputs,
-                            const vector<int>& window_inputs,
-                            const vector<int>& all_divisors,
-                            vector<vector<bool>>& br,
-                            vector<vector<bool>>& sim) {
+                            vector<vector<bool>>& br) {
     
-    int num_patterns = 1 << num_inputs;
+    // We compute target function in terms of selected divisors
+    // br[divisor_pattern][target_value] = can this divisor pattern produce this target value?
+    // Initialize with all true (everything is don't care initially)
     
-    // Filter out divisors that are window inputs
-    set<int> window_input_set(window_inputs.begin(), window_inputs.end());
-    vector<int> non_input_divisor_indices;
+    int num_selected = selected_divisors.size();
+    int num_divisor_patterns = 1 << num_selected;
+    int total_patterns = 1 << num_inputs;
     
-    for (int idx : selected_divisors) {
-        if (idx >= 0 && idx < static_cast<int>(all_divisors.size())) {
-            int divisor_node = all_divisors[idx];
-            if (window_input_set.find(divisor_node) == window_input_set.end()) {
-                non_input_divisor_indices.push_back(idx);
-            }
-        }
-    }
-    
-    // Initialize br[input_pattern][output_pattern]
+    // Initialize br - all patterns are don't care initially
     br.clear();
-    br.resize(num_patterns, vector<bool>(2, false));
+    br.resize(num_divisor_patterns, vector<bool>(2, true));
     
-    // Initialize sim[input_pattern][non_input_divisor]
-    sim.clear();
-    sim.resize(num_patterns, vector<bool>(non_input_divisor_indices.size(), false));
-    
-    for (int p = 0; p < num_patterns; p++) {
-        // Extract target value from multi-word truth table
-        int word_idx = p / 64;
-        int bit_idx = p % 64;
+    // For each input pattern, extract divisor values and target value
+    for (int input_pattern = 0; input_pattern < total_patterns; input_pattern++) {
+        int word_idx = input_pattern / 64;
+        int bit_idx = input_pattern % 64;
+        
+        // Extract target value for this input pattern
         bool target_value = false;
         if (word_idx < static_cast<int>(target_tt.size())) {
             target_value = (target_tt[word_idx] >> bit_idx) & 1;
         }
-        br[p][target_value ? 1 : 0] = true;
         
-        // Set non-input divisor values for this input pattern
-        for (size_t d = 0; d < non_input_divisor_indices.size(); d++) {
-            int divisor_idx = non_input_divisor_indices[d];
+        // Extract selected divisor values for this input pattern
+        int divisor_pattern = 0;
+        for (int i = 0; i < num_selected; i++) {
+            int divisor_idx = selected_divisors[i];
             bool divisor_value = false;
             if (divisor_idx < static_cast<int>(divisor_tts.size()) && 
                 word_idx < static_cast<int>(divisor_tts[divisor_idx].size())) {
                 divisor_value = (divisor_tts[divisor_idx][word_idx] >> bit_idx) & 1;
             }
-            sim[p][d] = divisor_value;
+            if (divisor_value) {
+                divisor_pattern |= (1 << i);
+            }
         }
+        
+        // This divisor pattern cannot produce the opposite target value
+        br[divisor_pattern][target_value ? 0 : 1] = false;
     }
 }

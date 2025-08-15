@@ -31,7 +31,4 @@ void convert_to_exopt_format(const std::vector<uint64_t>& target_tt,
                             const std::vector<std::vector<uint64_t>>& divisor_tts,
                             const std::vector<int>& selected_divisors,
                             int num_inputs,
-                            const std::vector<int>& window_inputs,
-                            const std::vector<int>& all_divisors,
-                            std::vector<std::vector<bool>>& br,
-                            std::vector<std::vector<bool>>& sim);
+                            std::vector<std::vector<bool>>& br);

@@ -68,7 +68,7 @@ void test_truth_table_computation() {
     int target = 4;
     
     std::cout << "\nTest 1: Node 4 = AND(1, 2) with 2 inputs\n";
-    auto results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors, true);
+    auto results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors);
     
     ASSERT(results.size() == 3); // 2 divisors + 1 target
     ASSERT(results[0].size() == 1); // 2^2 = 4 patterns = 1 word
@@ -92,7 +92,7 @@ void test_truth_table_computation() {
     target = 6; // AND(4, 5) = AND(AND(1,2), AND(2,3))
     
     std::cout << "\nTest 2: Node 6 = AND(AND(1,2), AND(2,3)) with 3 inputs\n";
-    results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors, false);
+    results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors);
     
     ASSERT(results.size() == 6); // 5 divisors + 1 target
     ASSERT(results[5].size() == 1); // 2^3 = 8 patterns = 1 word
