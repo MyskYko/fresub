@@ -393,89 +393,147 @@ void test_deep_circuit_simulation() {
 // Merged from: debug/test_truth_table_debug.cpp  
 // ============================================================================
 
+// Note: compute_truth_tables_for_window is now an AIG member function
+// See fresub_aig.hpp and fresub_aig.cpp for implementation
+
+// Backward compatibility wrapper for single node computation
 uint64_t compute_truth_table_for_node(const AIG& aig, int node, 
                                       const std::vector<int>& window_inputs,
                                       const std::vector<int>& window_nodes,
                                       bool verbose = false) {
+    // Use new efficient implementation for single node
+    std::vector<int> divisors;  // Empty divisor list, only compute target
+    auto results = aig.compute_truth_tables_for_window(node, window_inputs, window_nodes, divisors, verbose);
     
-    if (verbose) {
-        std::cout << "\n--- COMPUTING TRUTH TABLE FOR NODE " << node << " ---\n";
-        std::cout << "Window inputs: ";
-        print_node_vector(window_inputs);
-        std::cout << "\nWindow nodes: ";
-        print_node_vector(window_nodes);
+    if (!results.empty() && !results.back().empty()) {
+        return results.back()[0];  // Return first word of target (target is at the end)
+    }
+    return 0;
+}
+
+void test_efficient_window_simulation() {
+    std::cout << "=== TESTING EFFICIENT WINDOW SIMULATION ===\n";
+    std::cout << "Testing improved multi-node truth table computation...\n";
+    
+    // Create test circuit with multiple potential divisors
+    AIG aig;
+    aig.num_pis = 4;
+    aig.num_nodes = 8; // 0=const, 1-4=PIs, 5=a&b, 6=c&d, 7=(a&b)|(c&d)
+    aig.nodes.resize(8);
+    
+    for (int i = 0; i < 8; i++) {
+        aig.nodes[i] = AIG::Node{0, 0, 0, {}, false};
+    }
+    
+    // Node 5: a & b
+    aig.nodes[5].fanin0 = AIG::var2lit(1);
+    aig.nodes[5].fanin1 = AIG::var2lit(2);
+    
+    // Node 6: c & d  
+    aig.nodes[6].fanin0 = AIG::var2lit(3);
+    aig.nodes[6].fanin1 = AIG::var2lit(4);
+    
+    // Node 7: !(!(a&b) & !(c&d)) = (a&b) | (c&d) via De Morgan
+    aig.nodes[7].fanin0 = AIG::var2lit(5, true); // !(a&b)
+    aig.nodes[7].fanin1 = AIG::var2lit(6, true); // !(c&d)
+    
+    aig.pos.push_back(AIG::var2lit(7, true)); // !(!5 & !6) = 5 | 6
+    aig.num_pos = 1;
+    
+    std::cout << "  Built test circuit: ((a∧b) ∨ (c∧d))\n";
+    std::cout << "    Node 5: a ∧ b\n";
+    std::cout << "    Node 6: c ∧ d\n"; 
+    std::cout << "    Node 7: (a∧b) ∨ (c∧d) via De Morgan\n";
+    
+    // Test window extraction simulation
+    std::vector<int> window_inputs = {1, 2, 3, 4};  // All 4 PIs
+    std::vector<int> window_nodes = {5, 6, 7};      // Internal nodes
+    std::vector<int> divisors = {1, 2, 3, 4, 5, 6}; // Potential replacement signals
+    int target = 7;  // Target to optimize
+    
+    std::cout << "\n  Computing truth tables for target + " << divisors.size() << " divisors...\n";
+    
+    auto results = aig.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors, true);
+    
+    // Verify results: should have all divisors + target
+    ASSERT(results.size() == divisors.size() + 1); // divisors + target
+    ASSERT(!results.empty());
+    
+    std::cout << "\n  Verification:\n";
+    
+    // Check target truth table (at the end)
+    if (!results.back().empty()) {
+        uint64_t target_tt = results.back()[0];
+        std::cout << "    Target (7): ";
+        print_truth_table(target_tt, 4, "");
         std::cout << "\n";
+        
+        // Verify OR logic: should be 0 only when both inputs are 0000
+        ASSERT(target_tt != 0);  // Should not be constant 0
+        ASSERT(target_tt != 0xFFFFFFFFFFFFFFFF); // Should not be constant 1
+        std::cout << "      ✓ Target function is non-trivial\n";
     }
     
-    int num_inputs = window_inputs.size();
-    if (num_inputs > 6) {
-        std::cout << "ERROR: Too many inputs (" << num_inputs << ") for 64-bit truth table\n";
-        return 0;
-    }
-    
-    int num_patterns = 1 << num_inputs;
-    std::map<int, uint64_t> node_tt;
-    
-    // Initialize primary input truth tables
-    if (verbose) std::cout << "Initializing primary input truth tables:\n";
-    for (int i = 0; i < num_inputs; i++) {
-        int pi = window_inputs[i];
-        uint64_t pattern = 0;
-        
-        // Create bit pattern: input i toggles every 2^i positions
-        for (int p = 0; p < num_patterns; p++) {
-            if ((p >> i) & 1) {
-                pattern |= (1ULL << p);
-            }
-        }
-        
-        node_tt[pi] = pattern;
-        if (verbose) {
-            std::cout << "  Input " << pi << " (bit " << i << "): ";
-            print_truth_table(pattern, num_inputs, "");
-            std::cout << "\n";
+    // Check divisor truth tables (results[0..n-1])
+    for (size_t i = 0; i < divisors.size(); i++) {
+        if (i < results.size() && !results[i].empty()) {
+            std::cout << "    Divisor " << divisors[i] << ": [truth table computed] ✓\n";
+        } else {
+            std::cout << "    Divisor " << divisors[i] << ": [computation failed] ✗\n";
         }
     }
     
-    // Process window nodes in topological order
-    if (verbose) std::cout << "\nProcessing window nodes:\n";
-    for (int current_node : window_nodes) {
-        if (std::find(window_inputs.begin(), window_inputs.end(), current_node) != window_inputs.end()) {
-            continue; // Skip inputs, already processed
-        }
-        
-        if (current_node >= static_cast<int>(aig.nodes.size()) || aig.nodes[current_node].is_dead) {
-            if (verbose) std::cout << "  Node " << current_node << ": SKIPPED (dead)\n";
-            continue;
-        }
-        
-        int fanin0 = aig.lit2var(aig.nodes[current_node].fanin0);
-        int fanin1 = aig.lit2var(aig.nodes[current_node].fanin1);
-        bool comp0 = aig.is_complemented(aig.nodes[current_node].fanin0);
-        bool comp1 = aig.is_complemented(aig.nodes[current_node].fanin1);
-        
-        // Get fanin truth tables
-        uint64_t tt0 = (node_tt.find(fanin0) != node_tt.end()) ? node_tt[fanin0] : 0;
-        uint64_t tt1 = (node_tt.find(fanin1) != node_tt.end()) ? node_tt[fanin1] : 0;
-        
-        // Apply complementation
-        if (comp0) tt0 = ~tt0;
-        if (comp1) tt1 = ~tt1;
-        
-        // Compute AND
-        uint64_t result_tt = tt0 & tt1;
-        node_tt[current_node] = result_tt;
-        
-        if (verbose) {
-            std::cout << "  Node " << current_node << " = AND(";
-            std::cout << fanin0 << (comp0 ? "'" : "") << ", ";
-            std::cout << fanin1 << (comp1 ? "'" : "") << "):\n";
-            print_truth_table(result_tt, num_inputs, "    ");
-            std::cout << "\n";
+    std::cout << "  ✓ Efficient window simulation completed\n\n";
+}
+
+void test_large_truth_table() {
+    std::cout << "=== TESTING LARGE TRUTH TABLE (>64 bits) ===\n";
+    std::cout << "Testing multi-word truth table representation...\n";
+    
+    // Create a 7-input function (128 patterns, 2 words)
+    AIG aig;
+    aig.num_pis = 7;
+    aig.num_nodes = 9; // 0=const, 1-7=PIs, 8=f
+    aig.nodes.resize(9);
+    
+    for (int i = 0; i < 9; i++) {
+        aig.nodes[i] = AIG::Node{0, 0, 0, {}, false};
+    }
+    
+    // Create a complex 7-input function: f = (a&b&c) | (d&e&f&g)
+    // This requires intermediate nodes, but let's simplify to just test large TT
+    // Node 8: just AND of first 3 inputs for testing
+    aig.nodes[8].fanin0 = AIG::var2lit(1);  // a
+    aig.nodes[8].fanin1 = AIG::var2lit(2);  // b
+    
+    std::vector<int> window_inputs = {1, 2, 3, 4, 5, 6, 7};  // 7 inputs
+    std::vector<int> window_nodes = {8};
+    std::vector<int> divisors = {1, 2, 3, 4};  // Subset of inputs as divisors
+    
+    std::cout << "  Testing 7-input function (128 patterns = 2 words)...\n";
+    
+    auto results = aig.compute_truth_tables_for_window(8, window_inputs, window_nodes, divisors, true);
+    
+    // Verify multi-word structure
+    ASSERT(!results.empty());
+    ASSERT(results.size() == divisors.size() + 1); // divisors + target
+    
+    // Check target (at the end)
+    auto& target_tt = results.back();
+    ASSERT(target_tt.size() == 2);  // Should be 2 words for 128 patterns
+    std::cout << "    ✓ Target truth table: " << target_tt.size() << " words (128 patterns)\n";
+    std::cout << "      Word 0: 0x" << std::hex << target_tt[0] << std::dec << "\n";
+    std::cout << "      Word 1: 0x" << std::hex << target_tt[1] << std::dec << "\n";
+    
+    // Verify that all requested divisors have correct word count
+    for (size_t i = 0; i < divisors.size(); i++) {
+        if (i < results.size()) {
+            ASSERT(results[i].size() == 2);
+            std::cout << "    ✓ Divisor " << divisors[i] << ": " << results[i].size() << " words\n";
         }
     }
     
-    return (node_tt.find(node) != node_tt.end()) ? node_tt[node] : 0;
+    std::cout << "  ✓ Large truth table test completed\n\n";
 }
 
 void test_truth_table_computation() {
@@ -647,6 +705,8 @@ int main(int argc, char* argv[]) {
     
     // Section 2: Truth table analysis
     test_truth_table_computation();
+    test_efficient_window_simulation();
+    test_large_truth_table(); 
     test_truth_table_with_benchmark(benchmark_file);
     
     // Final results

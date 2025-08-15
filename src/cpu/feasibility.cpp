@@ -6,59 +6,6 @@
 
 namespace fresub {
 
-// Compute truth table for a node within a window
-uint64_t compute_truth_table_for_node(const AIG& aig, int node, 
-                                      const std::vector<int>& window_inputs,
-                                      const std::vector<int>& window_nodes) {
-    
-    int num_inputs = window_inputs.size();
-    if (num_inputs > 6) return 0;
-    
-    int num_patterns = 1 << num_inputs;
-    std::map<int, uint64_t> node_tt;
-    
-    // Initialize primary input truth tables
-    for (int i = 0; i < num_inputs; i++) {
-        int pi = window_inputs[i];
-        uint64_t pattern = 0;
-        for (int p = 0; p < num_patterns; p++) {
-            if ((p >> i) & 1) {
-                pattern |= (1ULL << p);
-            }
-        }
-        node_tt[pi] = pattern;
-    }
-    
-    // Simulate internal nodes in topological order
-    for (int current_node : window_nodes) {
-        if (current_node <= aig.num_pis) continue;
-        if (current_node >= static_cast<int>(aig.nodes.size()) || aig.nodes[current_node].is_dead) continue;
-        
-        uint32_t fanin0_lit = aig.nodes[current_node].fanin0;
-        uint32_t fanin1_lit = aig.nodes[current_node].fanin1;
-        
-        int fanin0 = aig.lit2var(fanin0_lit);
-        int fanin1 = aig.lit2var(fanin1_lit);
-        
-        bool fanin0_compl = aig.is_complemented(fanin0_lit);
-        bool fanin1_compl = aig.is_complemented(fanin1_lit);
-        
-        if (node_tt.find(fanin0) == node_tt.end() || node_tt.find(fanin1) == node_tt.end()) {
-            continue;
-        }
-        
-        uint64_t tt0 = node_tt[fanin0];
-        uint64_t tt1 = node_tt[fanin1];
-        
-        if (fanin0_compl) tt0 = ~tt0 & ((1ULL << num_patterns) - 1);
-        if (fanin1_compl) tt1 = ~tt1 & ((1ULL << num_patterns) - 1);
-        
-        uint64_t result_tt = tt0 & tt1;
-        node_tt[current_node] = result_tt;
-    }
-    
-    return node_tt.find(node) != node_tt.end() ? node_tt[node] : 0;
-}
 
 // CPU implementation of gresub feasibility check
 uint32_t solve_resub_overlap_cpu(int i, int j, int k, int l, 
@@ -135,46 +82,123 @@ uint32_t solve_resub_overlap_cpu(int i, int j, int k, int l,
     return res;
 }
 
-// Find feasible 4-input resubstitution
-FeasibilityResult find_feasible_4resub(const AIG& aig, const Window& window) {
-    FeasibilityResult result;
-    result.found = false;
+// Multi-word implementation of gresub feasibility check - returns true if feasible
+bool solve_resub_overlap_multiword(int i, int j, int k, int l,
+                                  const std::vector<std::vector<uint64_t>>& truth_tables,
+                                  const std::vector<uint64_t>& target_tt, int num_inputs) {
     
-    if (window.inputs.size() > 4 || window.divisors.size() < 4) {
-        return result;
+    if (i >= truth_tables.size() || j >= truth_tables.size() || 
+        k >= truth_tables.size() || l >= truth_tables.size()) {
+        return false;
     }
     
-    // Compute truth tables for all divisors
-    std::vector<uint64_t> divisor_tts;
-    for (int divisor : window.divisors) {
-        uint64_t tt = compute_truth_table_for_node(aig, divisor, window.inputs, window.nodes);
-        divisor_tts.push_back(tt);
+    if (truth_tables[i].empty() || truth_tables[j].empty() || 
+        truth_tables[k].empty() || truth_tables[l].empty() || target_tt.empty()) {
+        return false;
     }
     
-    uint64_t target_tt = compute_truth_table_for_node(aig, window.target_node, window.inputs, window.nodes);
+    uint64_t qs[32] = {0};
     
-    // Try all combinations of 4 divisors
-    for (size_t i = 0; i < window.divisors.size(); i++) {
-        for (size_t j = i + 1; j < window.divisors.size(); j++) {
-            for (size_t k = j + 1; k < window.divisors.size(); k++) {
-                for (size_t l = k + 1; l < window.divisors.size(); l++) {
-                    uint32_t mask = solve_resub_overlap_cpu(i, j, k, l, divisor_tts, 
-                                                          target_tt, window.inputs.size());
-                    if (mask > 0) {
-                        result.found = true;
-                        result.divisor_indices = {static_cast<int>(i), static_cast<int>(j), 
-                                                static_cast<int>(k), static_cast<int>(l)};
-                        result.divisor_nodes = {window.divisors[i], window.divisors[j], 
-                                              window.divisors[k], window.divisors[l]};
-                        result.mask = mask;
-                        return result;
+    int num_patterns = 1 << num_inputs;
+    size_t num_words = (num_patterns + 63) / 64;  // Ceiling division
+    
+    // Process all words using bitwise operations
+    for (size_t word_idx = 0; word_idx < num_words; word_idx++) {
+        if (word_idx >= truth_tables[i].size() || word_idx >= truth_tables[j].size() ||
+            word_idx >= truth_tables[k].size() || word_idx >= truth_tables[l].size() ||
+            word_idx >= target_tt.size()) {
+            continue;
+        }
+        
+        uint64_t t_i = truth_tables[i][word_idx];
+        uint64_t t_j = truth_tables[j][word_idx];
+        uint64_t t_k = truth_tables[k][word_idx];
+        uint64_t t_l = truth_tables[l][word_idx];
+        uint64_t target_word = target_tt[word_idx];
+        
+        // Apply mask for partial words (last word might have fewer than 64 bits)
+        uint64_t mask = ~0ULL;
+        if (word_idx == num_words - 1 && (num_patterns % 64) != 0) {
+            mask = (1ULL << (num_patterns % 64)) - 1;
+        }
+        
+        uint64_t t_on = target_word & mask;
+        uint64_t t_off = (~target_word) & mask;
+        
+        // Compute all combinations using bitwise operations (64 bits at once!)
+        qs[0]  |= t_off &  t_i &  t_j &  t_k &  t_l;    // off, i, j, k, l
+        qs[1]  |= t_on  &  t_i &  t_j &  t_k &  t_l;    // on,  i, j, k, l
+        qs[2]  |= t_off & ~t_i &  t_j &  t_k &  t_l;    // off, ~i, j, k, l
+        qs[3]  |= t_on  & ~t_i &  t_j &  t_k &  t_l;    // on,  ~i, j, k, l
+        qs[4]  |= t_off &  t_i & ~t_j &  t_k &  t_l;    // off, i, ~j, k, l
+        qs[5]  |= t_on  &  t_i & ~t_j &  t_k &  t_l;    // on,  i, ~j, k, l
+        qs[6]  |= t_off & ~t_i & ~t_j &  t_k &  t_l;    // off, ~i, ~j, k, l
+        qs[7]  |= t_on  & ~t_i & ~t_j &  t_k &  t_l;    // on,  ~i, ~j, k, l
+        qs[8]  |= t_off &  t_i &  t_j & ~t_k &  t_l;    // off, i, j, ~k, l
+        qs[9]  |= t_on  &  t_i &  t_j & ~t_k &  t_l;    // on,  i, j, ~k, l
+        qs[10] |= t_off & ~t_i &  t_j & ~t_k &  t_l;    // off, ~i, j, ~k, l
+        qs[11] |= t_on  & ~t_i &  t_j & ~t_k &  t_l;    // on,  ~i, j, ~k, l
+        qs[12] |= t_off &  t_i & ~t_j & ~t_k &  t_l;    // off, i, ~j, ~k, l
+        qs[13] |= t_on  &  t_i & ~t_j & ~t_k &  t_l;    // on,  i, ~j, ~k, l
+        qs[14] |= t_off & ~t_i & ~t_j & ~t_k &  t_l;    // off, ~i, ~j, ~k, l
+        qs[15] |= t_on  & ~t_i & ~t_j & ~t_k &  t_l;    // on,  ~i, ~j, ~k, l
+        qs[16] |= t_off &  t_i &  t_j &  t_k & ~t_l;    // off, i, j, k, ~l
+        qs[17] |= t_on  &  t_i &  t_j &  t_k & ~t_l;    // on,  i, j, k, ~l
+        qs[18] |= t_off & ~t_i &  t_j &  t_k & ~t_l;    // off, ~i, j, k, ~l
+        qs[19] |= t_on  & ~t_i &  t_j &  t_k & ~t_l;    // on,  ~i, j, k, ~l
+        qs[20] |= t_off &  t_i & ~t_j &  t_k & ~t_l;    // off, i, ~j, k, ~l
+        qs[21] |= t_on  &  t_i & ~t_j &  t_k & ~t_l;    // on,  i, ~j, k, ~l
+        qs[22] |= t_off & ~t_i & ~t_j &  t_k & ~t_l;    // off, ~i, ~j, k, ~l
+        qs[23] |= t_on  & ~t_i & ~t_j &  t_k & ~t_l;    // on,  ~i, ~j, k, ~l
+        qs[24] |= t_off &  t_i &  t_j & ~t_k & ~t_l;    // off, i, j, ~k, ~l
+        qs[25] |= t_on  &  t_i &  t_j & ~t_k & ~t_l;    // on,  i, j, ~k, ~l
+        qs[26] |= t_off & ~t_i &  t_j & ~t_k & ~t_l;    // off, ~i, j, ~k, ~l
+        qs[27] |= t_on  & ~t_i &  t_j & ~t_k & ~t_l;    // on,  ~i, j, ~k, ~l
+        qs[28] |= t_off &  t_i & ~t_j & ~t_k & ~t_l;    // off, i, ~j, ~k, ~l
+        qs[29] |= t_on  &  t_i & ~t_j & ~t_k & ~t_l;    // on,  i, ~j, ~k, ~l
+        qs[30] |= t_off & ~t_i & ~t_j & ~t_k & ~t_l;    // off, ~i, ~j, ~k, ~l
+        qs[31] |= t_on  & ~t_i & ~t_j & ~t_k & ~t_l;    // on,  ~i, ~j, ~k, ~l
+    }
+    
+    // Check feasibility using same logic as original
+    for (int h = 0; h < 16; h++) {
+        if ((qs[2*h] != 0) && (qs[2*h+1] != 0)) {
+            return false; // Not feasible
+        }
+    }
+    
+    return true; // Feasible
+}
+
+// Find all feasible 4-input resubstitution combinations
+std::vector<std::vector<int>> find_feasible_4resub(
+    const std::vector<std::vector<uint64_t>>& divisor_truth_tables,
+    const std::vector<uint64_t>& target_truth_table,
+    int num_inputs) {
+    
+    std::vector<std::vector<int>> feasible_combinations;
+    
+    if (divisor_truth_tables.size() < 4) {
+        return feasible_combinations; // Need at least 4 divisors
+    }
+    
+    // Enumerate all combinations of 4 divisors and collect all feasible ones
+    for (size_t i = 0; i < divisor_truth_tables.size(); i++) {
+        for (size_t j = i + 1; j < divisor_truth_tables.size(); j++) {
+            for (size_t k = j + 1; k < divisor_truth_tables.size(); k++) {
+                for (size_t l = k + 1; l < divisor_truth_tables.size(); l++) {
+                    bool is_feasible = solve_resub_overlap_multiword(i, j, k, l, divisor_truth_tables, 
+                                                                     target_truth_table, num_inputs);
+                    if (is_feasible) {
+                        feasible_combinations.push_back({static_cast<int>(i), static_cast<int>(j), 
+                                                        static_cast<int>(k), static_cast<int>(l)});
                     }
                 }
             }
         }
     }
     
-    return result;
+    return feasible_combinations;
 }
 
 // Convert truth tables to exopt binary relation format

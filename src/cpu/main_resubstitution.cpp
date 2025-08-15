@@ -79,12 +79,24 @@ bool resubstitute_window(AIG& aig, const Window& window, bool verbose) {
         std::cout << "}\n";
     }
     
-    // Step 2: Exact synthesis
-    uint64_t target_tt = compute_truth_table_for_node(aig, window.target_node, window.inputs, window.nodes);
+    // Step 2: Exact synthesis - compute all truth tables efficiently at once
+    auto all_truth_tables = aig.compute_truth_tables_for_window(
+        window.target_node, window.inputs, window.nodes, window.divisors);
+    
+    // Extract individual truth tables for compatibility with existing code
     std::vector<uint64_t> divisor_tts;
-    for (int divisor : window.divisors) {
-        uint64_t tt = compute_truth_table_for_node(aig, divisor, window.inputs, window.nodes);
-        divisor_tts.push_back(tt);
+    for (size_t i = 0; i < window.divisors.size(); i++) {
+        if (i < all_truth_tables.size() && !all_truth_tables[i].empty()) {
+            divisor_tts.push_back(all_truth_tables[i][0]); // First 64 bits
+        } else {
+            divisor_tts.push_back(0);
+        }
+    }
+    
+    // Target truth table is at the end
+    uint64_t target_tt = 0;
+    if (!all_truth_tables.empty() && !all_truth_tables.back().empty()) {
+        target_tt = all_truth_tables.back()[0]; // First 64 bits
     }
     
     std::vector<std::vector<bool>> br, sim;

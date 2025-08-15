@@ -43,20 +43,19 @@ public:
     
     // Simulation
     void simulate(const std::vector<uint64_t>& pi_values);
-    std::vector<uint64_t> simulate_threadsafe(const std::vector<uint64_t>& pi_values) const;
     uint64_t get_sim_value(int node_id) const;
     
-    // Window-only bit-parallel simulation
-    std::unordered_map<int, uint64_t> simulate_window_bitparallel(
+    
+    // Multi-word truth table computation for windows
+    // Returns vector<vector<word>> where:
+    // - results[0..n-1] = divisors[0..n-1] truth tables
+    // - results[n] = target truth table (at the end)
+    std::vector<std::vector<uint64_t>> compute_truth_tables_for_window(
+        int target_node,
         const std::vector<int>& window_inputs,
-        const std::vector<int>& window_nodes,
-        const std::vector<int>& target_nodes) const;
-        
-    // Stateless bit-parallel simulation - no shared state access
-    static std::unordered_map<int, uint64_t> simulate_window_stateless(
-        const std::vector<int>& window_inputs,
-        const std::vector<int>& nodes_to_compute,
-        const std::vector<std::pair<int, std::pair<int, int>>>& node_definitions);
+        const std::vector<int>& window_nodes, 
+        const std::vector<int>& divisors,
+        bool verbose = false) const;
     
     // Structural operations
     void build_fanouts();
@@ -69,12 +68,7 @@ public:
     static inline bool is_complemented(int lit) { return lit & 1; }
     static inline int complement(int lit) { return lit ^ 1; }
     
-    // Topological operations
-    void topological_sort(std::vector<int>& sorted_nodes) const;
-    void get_cone(int root, std::vector<int>& cone_nodes) const;
-    
 private:
-    void dfs_mark(int node_id, std::vector<bool>& visited, std::vector<int>& result) const;
 };
 
 } // namespace fresub
