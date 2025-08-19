@@ -78,10 +78,9 @@ int main(int argc, char** argv) {
         
   // Collect resubstitution candidates
   std::vector<ResubstitutionCandidate> candidates;
-  
   for (const auto& window : windows) {
     if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
-      continue;
+      continue; // Too small for 4-input feasiblity
     }
     
     if (config.verbose) {
@@ -90,39 +89,16 @@ int main(int argc, char** argv) {
 		<< window.divisors.size() << " divisors)\n";
     }
     
-    // Step 1: Compute truth tables for feasibility check
-    auto all_truth_tables = compute_truth_tables_for_window(aig, window, config.verbose);
-    if (all_truth_tables.empty()) {
-      std::cerr << "  Could not compute truth tables\n";
-      return 1;
-    }
+    // Compute truth tables
+    auto truth_tables = compute_truth_tables_for_window(aig, window, config.verbose);
     
-    // Extract divisor truth tables and target truth table
-    std::vector<std::vector<uint64_t>> divisor_truth_tables;
-    for (size_t i = 0; i < window.divisors.size(); i++) {
-      if (i < all_truth_tables.size()) {
-	divisor_truth_tables.push_back(all_truth_tables[i]);
-      } else {
-	divisor_truth_tables.push_back({0});
-      }
-    }
-    
-    std::vector<uint64_t> target_truth_table;
-    if (!all_truth_tables.empty()) {
-      target_truth_table = all_truth_tables.back();
-    } else {
-      target_truth_table = {0};
-    }
-    
-    // Step 2: Feasibility check
-    auto feasible_combinations = find_feasible_4resub(divisor_truth_tables, target_truth_table, window.inputs.size());
+    // Feasibility check
+    auto feasible_combinations = find_feasible_4resub(truth_tables, window.inputs.size());
     if (feasible_combinations.empty()) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
-    
-    // Use the first feasible combination
-    auto selected_divisor_indices = feasible_combinations[0];
+    auto selected_divisor_indices = feasible_combinations[0]; // Use the first feasible combination
     if (config.verbose) {
       std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
@@ -132,9 +108,16 @@ int main(int argc, char** argv) {
       std::cout << "}\n";
     }
     
-    // Step 3: Synthesis
+    // Synthesis
+    // Extract target truth table (last element) and selected divisor truth tables
+    std::vector<uint64_t> target_truth_table = truth_tables.back();
+    std::vector<std::vector<uint64_t>> selected_divisor_tts;
+    for (int idx : selected_divisor_indices) {
+      selected_divisor_tts.push_back(truth_tables[idx]);
+    }
+    
     std::vector<std::vector<bool>> br;
-    convert_to_exopt_format(target_truth_table, divisor_truth_tables, selected_divisor_indices, window.inputs.size(), br);
+    convert_to_exopt_format(target_truth_table, selected_divisor_tts, selected_divisor_indices, window.inputs.size(), br);
     
     SynthesisResult synthesis = synthesize_circuit(br, 10);
     if (!synthesis.success) {

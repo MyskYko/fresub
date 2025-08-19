@@ -77,8 +77,12 @@ void test_synthetic_truth_tables() {
         print_truth_table_multiword(target, num_inputs, "    Target (a&b&c)");
         std::cout << "\n";
         
+        // Combine divisors and target into single vector (target last)
+        std::vector<std::vector<uint64_t>> combined_tts = divisors;
+        combined_tts.push_back(target);
+        
         // Test feasibility: should be feasible since target = a & b & c
-        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, divisors, target, num_inputs);
+        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, combined_tts, num_inputs);
         std::cout << "    Feasibility result: " << (feasible ? "FEASIBLE" : "NOT FEASIBLE") << "\n";
         ASSERT(feasible == true); // Should be feasible
     }
@@ -111,7 +115,11 @@ void test_synthetic_truth_tables() {
         print_truth_table_multiword(target, num_inputs);
         std::cout << "\n";
         
-        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, divisors, target, num_inputs);
+        // Combine divisors and target into single vector (target last)
+        std::vector<std::vector<uint64_t>> combined_tts = divisors;
+        combined_tts.push_back(target);
+        
+        bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, combined_tts, num_inputs);
         std::cout << "    Feasibility result: " << (feasible ? "FEASIBLE" : "NOT FEASIBLE") << "\n";
         ASSERT(feasible == false); // Should be infeasible - cannot distinguish onset from offset
     }
@@ -167,14 +175,14 @@ void test_feasibility_with_aigman() {
             auto truth_tables = fresub::compute_truth_tables_for_window(aig, window, false);
             
             if (truth_tables.size() >= 5) { // Need at least 4 divisors + 1 target
-                // Take first 4 divisors for 4-input resubstitution test
-                std::vector<std::vector<uint64_t>> div_tts;
+                // Take first 4 divisors + target (truth_tables already has target as last element)
+                std::vector<std::vector<uint64_t>> selected_tts;
                 for (int i = 0; i < 4; i++) {
-                    div_tts.push_back(truth_tables[i]);
+                    selected_tts.push_back(truth_tables[i]);
                 }
-                std::vector<uint64_t> target_tt = truth_tables.back();
+                selected_tts.push_back(truth_tables.back()); // Add target
                 
-                bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, div_tts, target_tt, window.inputs.size());
+                bool feasible = solve_resub_overlap_multiword(0, 1, 2, 3, selected_tts, window.inputs.size());
                 
                 if (feasible) {
                     feasible_windows++;
@@ -202,19 +210,19 @@ void test_find_feasible_4resub() {
     
     // Create simple test case
     int num_inputs = 4;
-    std::vector<std::vector<uint64_t>> divisors(6, std::vector<uint64_t>(1)); // 6 divisors
-    std::vector<uint64_t> target(1);
+    std::vector<std::vector<uint64_t>> truth_tables(7, std::vector<uint64_t>(1)); // 6 divisors + 1 target
     
-    // Simple patterns
-    divisors[0][0] = 0xaaaa; // a
-    divisors[1][0] = 0xcccc; // b  
-    divisors[2][0] = 0xf0f0; // c
-    divisors[3][0] = 0xff00; // d
-    divisors[4][0] = 0xaaaa & 0xcccc; // a & b
-    divisors[5][0] = 0xf0f0 & 0xff00; // c & d
-    target[0] = divisors[4][0] | divisors[5][0]; // (a & b) | (c & d)
+    // Simple patterns for divisors
+    truth_tables[0][0] = 0xaaaa; // a
+    truth_tables[1][0] = 0xcccc; // b  
+    truth_tables[2][0] = 0xf0f0; // c
+    truth_tables[3][0] = 0xff00; // d
+    truth_tables[4][0] = 0xaaaa & 0xcccc; // a & b
+    truth_tables[5][0] = 0xf0f0 & 0xff00; // c & d
+    // Target is last element
+    truth_tables[6][0] = truth_tables[4][0] | truth_tables[5][0]; // (a & b) | (c & d)
     
-    auto feasible_combinations = find_feasible_4resub(divisors, target, num_inputs);
+    auto feasible_combinations = find_feasible_4resub(truth_tables, num_inputs);
     
     std::cout << "Found " << feasible_combinations.size() << " feasible 4-input combinations\n";
     for (size_t i = 0; i < feasible_combinations.size() && i < 5; i++) {
