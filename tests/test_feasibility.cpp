@@ -1,5 +1,6 @@
 #include "window.hpp"
 #include "feasibility.hpp"
+#include "simulation.hpp"
 #include <aig.hpp>
 #include <iostream>
 #include <cassert>
@@ -152,7 +153,7 @@ void test_feasibility_with_aigman() {
     std::cout << "Created hardcoded AIG for feasibility testing\n";
     
     // Test feasibility analysis on windows
-    WindowExtractor extractor(aig, 4);
+    WindowExtractor extractor(aig, 4, true);
     std::vector<Window> windows;
     extractor.extract_all_windows(windows);
     ASSERT(!windows.empty());
@@ -163,9 +164,7 @@ void test_feasibility_with_aigman() {
     for (const auto& window : windows) {
         if (window.divisors.size() >= 4 && window.inputs.size() <= 6) {
             // Test feasibility using real AIG-derived truth tables
-            auto truth_tables = extractor.compute_truth_tables_for_window(
-                window.target_node, window.inputs, window.nodes, window.divisors, false
-            );
+            auto truth_tables = fresub::compute_truth_tables_for_window(aig, window, false);
             
             if (truth_tables.size() >= 5) { // Need at least 4 divisors + 1 target
                 // Take first 4 divisors for 4-input resubstitution test

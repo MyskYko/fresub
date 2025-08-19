@@ -1,4 +1,5 @@
 #include "window.hpp"
+#include "simulation.hpp"
 #include <aig.hpp>
 #include <iostream>
 #include <cassert>
@@ -59,16 +60,16 @@ void test_truth_table_computation() {
     std::cout << "Created hardcoded AIG with " << aig.nPis << " PIs, " << aig.nGates << " gates\n";
     
     // Test compute_truth_tables_for_window function
-    WindowExtractor extractor(aig, 4);
     
     // Test 1: Simple case - compute truth table for node 4 with inputs 1,2
-    std::vector<int> window_inputs = {1, 2};
-    std::vector<int> window_nodes = {1, 2, 4};
-    std::vector<int> divisors = {1, 2};
-    int target = 4;
+    fresub::Window window1;
+    window1.target_node = 4;
+    window1.inputs = {1, 2};
+    window1.nodes = {1, 2, 4};
+    window1.divisors = {1, 2};
     
     std::cout << "\nTest 1: Node 4 = AND(1, 2) with 2 inputs\n";
-    auto results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors);
+    auto results = fresub::compute_truth_tables_for_window(aig, window1, false);
     
     ASSERT(results.size() == 3); // 2 divisors + 1 target
     ASSERT(results[0].size() == 1); // 2^2 = 4 patterns = 1 word
@@ -86,13 +87,14 @@ void test_truth_table_computation() {
     std::cout << "✓ Truth table computation working correctly\n";
     
     // Test 2: More complex case - 3 inputs
-    window_inputs = {1, 2, 3};
-    window_nodes = {1, 2, 3, 4, 5, 6};
-    divisors = {1, 2, 3, 4, 5};
-    target = 6; // AND(4, 5) = AND(AND(1,2), AND(2,3))
+    fresub::Window window2;
+    window2.target_node = 6; // AND(4, 5) = AND(AND(1,2), AND(2,3))
+    window2.inputs = {1, 2, 3};
+    window2.nodes = {1, 2, 3, 4, 5, 6};
+    window2.divisors = {1, 2, 3, 4, 5};
     
     std::cout << "\nTest 2: Node 6 = AND(AND(1,2), AND(2,3)) with 3 inputs\n";
-    results = extractor.compute_truth_tables_for_window(target, window_inputs, window_nodes, divisors);
+    results = fresub::compute_truth_tables_for_window(aig, window2, false);
     
     ASSERT(results.size() == 6); // 5 divisors + 1 target
     ASSERT(results[5].size() == 1); // 2^3 = 8 patterns = 1 word

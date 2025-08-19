@@ -130,7 +130,7 @@ void test_hardcoded_aig() {
     print_aig_structure(aig);
     
     // Test MFFC and TFO for specific targets
-    WindowExtractor extractor(aig, 4);
+    WindowExtractor extractor(aig, 4, true);
     
     std::cout << "=== TESTING MFFC COMPUTATION ===\n";
     

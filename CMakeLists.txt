@@ -30,6 +30,7 @@ add_subdirectory(lib/exopt)
 # Source files - separate library sources from main
 set(CPU_LIB_SOURCES
     src/cpu/window.cpp
+    src/cpu/simulation.cpp
     src/cpu/feasibility.cpp
     src/cpu/synthesis_bridge.cpp
     src/cpu/conflict.cpp

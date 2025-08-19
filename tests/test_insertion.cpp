@@ -164,7 +164,7 @@ void test_conflict_resolution() {
     print_aig_structure(aig, "INITIAL AIG FOR CONFLICT TEST");
     
     // Extract windows - should find windows for nodes 5, 6, 7, 8, 9
-    WindowExtractor extractor(aig, 6);
+    WindowExtractor extractor(aig, 6, true);
     std::vector<Window> windows;
     extractor.extract_all_windows(windows);
     
