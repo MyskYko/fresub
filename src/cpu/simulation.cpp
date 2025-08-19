@@ -20,7 +20,6 @@ namespace fresub {
 	0xffff0000ffff0000ull,
 	0xffffffff00000000ull};
 
-
     if (verbose) {
       std::cout << "\n--- COMPUTING TRUTH TABLES FOR WINDOW ---\n";
       std::cout << "Target: " << window.target_node << "\n";
@@ -43,17 +42,11 @@ namespace fresub {
     }
     
     int num_inputs = window.inputs.size();
-    if (num_inputs > 20) {  // Reasonable limit for memory usage
-      std::cout << "ERROR: Too many inputs (" << num_inputs << ") for truth table computation\n";
-      return {};
-    }
-    
+    assert(num_inputs <= 20);
     int num_patterns = 1 << num_inputs;
-    int num_words = (num_patterns + 63) / 64;  // Ceiling division
-    
+    int num_words = (num_patterns + 63) / 64;
     if (verbose) {
-      std::cout << "Truth table size: " << num_patterns << " patterns = " 
-		<< num_words << " words of 64 bits\n";
+      std::cout << "Truth table size: " << num_patterns << " patterns = " << num_words << " words of 64 bits\n";
     }
     
     std::unordered_map<int, std::vector<uint64_t>> node_tt;
@@ -72,8 +65,7 @@ namespace fresub {
 	}
       }
       if (verbose) {
-	std::cout << "  Input " << wi << " (bit " << i << "): ";
-	// Print first word for debugging (if reasonable size)
+	std::cout << "  Input " << wi << " (position " << i << "): ";
 	if (num_patterns <= 64) {
 	  for (int b = num_patterns - 1; b >= 0; b--) {
 	    std::cout << ((node_tt[wi][0] >> b) & 1);
@@ -86,27 +78,21 @@ namespace fresub {
       }
     }
       
-    // Process window nodes in topological order
     if (verbose) std::cout << "\nProcessing window nodes:\n";
     for (int current_node : window.nodes) {
       if (std::find(window.inputs.begin(), window.inputs.end(), current_node) != window.inputs.end()) {
 	continue; // Skip inputs, already processed
       }
-        
-      // Adapt to aigman structure: use aig.vObjs instead of nodes[].fanin0/fanin1
       int fanin0 = lit2var(aig.vObjs[current_node * 2]);
       int fanin1 = lit2var(aig.vObjs[current_node * 2 + 1]);
       bool comp0 = is_complemented(aig.vObjs[current_node * 2]);
       bool comp1 = is_complemented(aig.vObjs[current_node * 2 + 1]);
-        
-      // Apply complementation and compute AND word by word
       node_tt[current_node].resize(num_words);
       for (int w = 0; w < num_words; w++) {
 	uint64_t val0 = comp0 ? ~node_tt[fanin0][w] : node_tt[fanin0][w];
 	uint64_t val1 = comp1 ? ~node_tt[fanin1][w] : node_tt[fanin1][w];
 	node_tt[current_node][w] = val0 & val1;
       }
-        
       if (verbose) {
 	std::cout << "  Node " << current_node << " = AND(";
 	std::cout << fanin0 << (comp0 ? "'" : "") << ", ";
@@ -127,17 +113,12 @@ namespace fresub {
     // Extract results as vector<vector<word>>
     // results[0..n-1] = divisors[0..n-1], results[n] = target
     std::vector<std::vector<uint64_t>> results;
-    
-    // Add all divisors first (indices 0..n-1)
     for (int divisor : window.divisors) {
       assert(node_tt.find(divisor) != node_tt.end());
-      results.push_back(node_tt[divisor]);
+      results.push_back(std::move(node_tt[divisor]));
     }
-    
-    // Add target node at the end (index n)
     assert(node_tt.find(window.target_node) != node_tt.end());
-    results.push_back(node_tt[window.target_node]);
-    
+    results.push_back(std::move(node_tt[window.target_node]));
     if (verbose) {
       std::cout << "\nExtracted truth tables as vector<vector<word>>:\n";
       for (size_t i = 0; i < window.divisors.size(); i++) {

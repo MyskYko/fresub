@@ -69,7 +69,7 @@ void test_truth_table_computation() {
     window1.divisors = {1, 2};
     
     std::cout << "\nTest 1: Node 4 = AND(1, 2) with 2 inputs\n";
-    auto results = fresub::compute_truth_tables_for_window(aig, window1, false);
+    auto results = fresub::compute_truth_tables_for_window(aig, window1, true);
     
     ASSERT(results.size() == 3); // 2 divisors + 1 target
     ASSERT(results[0].size() == 1); // 2^2 = 4 patterns = 1 word
@@ -94,7 +94,7 @@ void test_truth_table_computation() {
     window2.divisors = {1, 2, 3, 4, 5};
     
     std::cout << "\nTest 2: Node 6 = AND(AND(1,2), AND(2,3)) with 3 inputs\n";
-    results = fresub::compute_truth_tables_for_window(aig, window2, false);
+    results = fresub::compute_truth_tables_for_window(aig, window2, true);
     
     ASSERT(results.size() == 6); // 5 divisors + 1 target
     ASSERT(results[5].size() == 1); // 2^3 = 8 patterns = 1 word
