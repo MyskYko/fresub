@@ -1,0 +1,2 @@
+ - try all feasible sets of divisors to choose the best one
+ - sort insertion order, probably based on gain
