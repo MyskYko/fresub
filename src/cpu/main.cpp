@@ -22,6 +22,7 @@ struct Config {
     int max_cut_size = 4;
     bool verbose = false;
     bool show_stats = false;
+    bool use_mockturtle = true;  // Default to mockturtle synthesis
 };
 
 
@@ -35,6 +36,10 @@ int main(int argc, char** argv) {
       config.show_stats = true;
     } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
       config.max_cut_size = std::atoi(argv[++i]);
+    } else if (strcmp(argv[i], "--exopt") == 0) {
+      config.use_mockturtle = false;
+    } else if (strcmp(argv[i], "--mockturtle") == 0) {
+      config.use_mockturtle = true;
     } else if (argv[i][0] != '-') {
       if (config.input_file.empty()) {
 	config.input_file = argv[i];
@@ -46,9 +51,11 @@ int main(int argc, char** argv) {
   if (config.input_file.empty()) {
     std::cerr << "Usage: " << argv[0] << " [options] <input.aig> [output.aig]\n";
     std::cerr << "Options:\n";
-    std::cerr << "  -c <size>  Max cut size (default: 4)\n";
-    std::cerr << "  -v         Verbose output\n";
-    std::cerr << "  -s         Show statistics\n";
+    std::cerr << "  -c <size>     Max cut size (default: 4)\n";
+    std::cerr << "  -v            Verbose output\n";
+    std::cerr << "  -s            Show statistics\n";
+    std::cerr << "  --exopt       Use SAT-based synthesis (exopt)\n";
+    std::cerr << "  --mockturtle  Use library-based synthesis (mockturtle, default)\n";
     return 1;
   }
   
@@ -61,6 +68,9 @@ int main(int argc, char** argv) {
   int initial_gates = aig.nGates;
   if (config.show_stats) {
     std::cout << "Initial AIG: " << aig.nPis << " PIs, " << aig.nPos << " POs, " << initial_gates << " gates\n";
+  }
+  if (config.verbose) {
+    std::cout << "Using " << (config.use_mockturtle ? "mockturtle library-based" : "exopt SAT-based") << " synthesis\n";
   }
 
   // Start measurement
@@ -112,7 +122,12 @@ int main(int argc, char** argv) {
     // Synthesis
     std::vector<std::vector<bool>> br;
     convert_to_exopt_format(truth_tables, selected_divisor_indices, window.inputs.size(), br);
-    aigman* synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
+    aigman* synthesized_aig;
+    if (config.use_mockturtle) {
+      synthesized_aig = synthesize_circuit_mockturtle(br, window.mffc_size - 1);
+    } else {
+      synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
+    }
     if (!synthesized_aig) {
       if (config.verbose) {
 	std::cout << "  Synthesis failed: no solution found within gate limit\n";
