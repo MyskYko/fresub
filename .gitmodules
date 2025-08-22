@@ -1,3 +1,6 @@
 [submodule "lib/exopt"]
 	path = lib/exopt
 	url = https://github.com/MyskYko/exopt.git
+[submodule "lib/mockturtle"]
+	path = lib/mockturtle
+	url = https://github.com/lsils/mockturtle.git
