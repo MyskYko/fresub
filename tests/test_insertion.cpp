@@ -1,6 +1,6 @@
 #include "window.hpp"
 #include "synthesis.hpp"
-#include "conflict.hpp"
+#include "insertion.hpp"
 #include <aig.hpp>
 #include <iostream>
 #include <cassert>
@@ -174,12 +174,12 @@ void test_conflict_resolution() {
                   << ", divisors=" << windows[i].divisors.size() << "\n";
     }
     
-    // Test conflict resolver with resubstitution candidates
-    ConflictResolver resolver(aig);
+    // Test inserter with resubstitution results
+    Inserter inserter(aig);
     
-    // Create resubstitution candidates from windows with divisors
-    std::vector<ResubstitutionCandidate> candidates;
-    std::cout << "\nCreating resubstitution candidates:\n";
+    // Create resubstitution results from windows with divisors
+    std::vector<Result> results;
+    std::cout << "\nCreating resubstitution results:\n";
     for (size_t i = 0; i < windows.size(); i++) {
         if (windows[i].divisors.size() >= 2) {
             // Select first 2 divisors as selected divisor nodes
@@ -195,17 +195,17 @@ void test_conflict_resolution() {
             synth_aig->nObjs = 4;
             synth_aig->vPos[0] = 6;  // Output is node 3
             
-            candidates.emplace_back(synth_aig, windows[i].target_node, selected_nodes);
-            std::cout << "  Candidate " << candidates.size()-1 << ": target=" << windows[i].target_node 
+            results.emplace_back(synth_aig, windows[i].target_node, selected_nodes);
+            std::cout << "  Result " << results.size()-1 << ": target=" << windows[i].target_node 
                       << ", divisors=[" << selected_nodes[0] << "," << selected_nodes[1] << "]\n";
         }
     }
     
-    // Check initial validity of candidates
+    // Check initial validity of results
     std::cout << "\nInitial candidate validity:\n";
-    for (size_t i = 0; i < candidates.size(); i++) {
-        bool valid = resolver.is_candidate_valid(candidates[i]);
-        std::cout << "  Candidate " << i << " (target " << candidates[i].target_node << "): " 
+    for (size_t i = 0; i < results.size(); i++) {
+        bool valid = inserter.is_candidate_valid(results[i]);
+        std::cout << "  Result " << i << " (target " << results[i].target_node << "): " 
                   << (valid ? "VALID" : "INVALID") << "\n";
         ASSERT(valid);  // All should be valid initially
     }
@@ -218,36 +218,36 @@ void test_conflict_resolution() {
     print_aig_structure(aig, "AIG AFTER REPLACING NODE 5");
     
     // Check candidate validity after replacement
-    std::cout << "\nCandidate validity after node 5 replacement:\n";
+    std::cout << "\nResult validity after node 5 replacement:\n";
     int valid_count = 0, invalid_count = 0;
-    for (size_t i = 0; i < candidates.size(); i++) {
-        bool valid = resolver.is_candidate_valid(candidates[i]);
-        std::cout << "  Candidate " << i << " (target " << candidates[i].target_node << "): " 
+    for (size_t i = 0; i < results.size(); i++) {
+        bool valid = inserter.is_candidate_valid(results[i]);
+        std::cout << "  Result " << i << " (target " << results[i].target_node << "): " 
                   << (valid ? "VALID" : "INVALID") << "\n";
         if (valid) valid_count++;
         else invalid_count++;
     }
     
-    ASSERT(invalid_count > 0);  // Some candidates should become invalid
+    ASSERT(invalid_count > 0);  // Some results should become invalid
     std::cout << "✓ Conflict resolution correctly identified " << invalid_count 
-              << " invalid candidates out of " << candidates.size() << " total\n";
+              << " invalid results out of " << results.size() << " total\n";
     
-    // Test sequential processing of candidates
-    std::cout << "\nTesting sequential candidate processing:\n";
-    auto results = resolver.process_candidates_sequentially(candidates, true); // verbose for tests
+    // Test sequential processing of results
+    std::cout << "\nTesting sequential result processing:\n";
+    auto applied_results = inserter.process_candidates_sequentially(results, true); // verbose for tests
     
     int applied = 0, skipped = 0;
-    for (bool result : results) {
-        if (result) applied++;
+    for (bool success : applied_results) {
+        if (success) applied++;
         else skipped++;
     }
     
-    ASSERT(applied + skipped == static_cast<int>(candidates.size()));
+    ASSERT(applied + skipped == static_cast<int>(results.size()));
     ASSERT(applied > 0);  // At least some should be applied
     ASSERT(skipped >= invalid_count);  // At least the initially invalid ones should be skipped
     
     std::cout << "✓ Sequential processing correctly applied " << applied 
-              << " and skipped " << skipped << " candidates\n";
+              << " and skipped " << skipped << " results\n";
 }
 
 int main() {

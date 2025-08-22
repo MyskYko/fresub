@@ -8,7 +8,7 @@
 #include "simulation.hpp"
 #include "feasibility.hpp"
 #include "synthesis.hpp"
-#include "conflict.hpp"
+#include "insertion.hpp"
 #include <aig.hpp>  // For complete aigman type
 
 using namespace fresub;
@@ -22,7 +22,6 @@ struct Config {
     bool show_stats = false;
 };
 
-ResubstitutionCandidate* create_resubstitution_candidate(aigman& aig, const Window& window, bool verbose);
 
 int main(int argc, char** argv) {
   // Read arguments
@@ -76,8 +75,8 @@ int main(int argc, char** argv) {
     std::cout << "Extracted " << windows.size() << " windows\n";
   }
         
-  // Collect resubstitution candidates
-  std::vector<ResubstitutionCandidate> candidates;
+  // Collect resubstitution results
+  std::vector<Result> results;
   for (const auto& window : windows) {
     if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
       continue; // Too small for 4-input feasiblity
@@ -119,41 +118,34 @@ int main(int argc, char** argv) {
       std::cout << "  ✓ Synthesis successful: " << synthesized_aig->nGates << " gates\n";
     }
     
-    // Create selected divisor nodes from indices
+    // Create and return resubstitution result (to be processed later)
+    if (config.verbose) {
+      std::cout << "  ✓ Created resubstitution result for target node " 
+		<< window.target_node << "\n";
+    }
     std::vector<int> selected_divisor_nodes;
     for (int idx : selected_divisor_indices) {
       selected_divisor_nodes.push_back(window.divisors[idx]);
     }
-    
-    // Create and return resubstitution candidate (to be processed later)
-    if (config.verbose) {
-      std::cout << "  ✓ Created resubstitution candidate for target node " 
-		<< window.target_node << "\n";
-    }
-    candidates.emplace_back(synthesized_aig, window.target_node, selected_divisor_nodes);
+    results.emplace_back(synthesized_aig, window.target_node, selected_divisor_nodes);
   }
-        
+  
+  // Process results sequentially to avoid conflicts
   if (config.verbose) {
-    std::cout << "\nCollected " << candidates.size() << " resubstitution candidates\n";
-    std::cout << "Processing candidates sequentially...\n";
+    std::cout << "\nCollected " << results.size() << " resubstitution results\n";
+    std::cout << "Processing results sequentially...\n";
   }
-  
-  // Process candidates sequentially to avoid conflicts
-  ConflictResolver resolver(aig);
-  auto results = resolver.process_candidates_sequentially(candidates, config.verbose);
-  
-  // Count successful applications
-  int successful_resubs = 0;
-  for (bool success : results) {
-    if (success) successful_resubs++;
-  }
-  
-  auto end_time = high_resolution_clock::now();
-  auto duration = duration_cast<milliseconds>(end_time - start_time);
+  Inserter inserter(aig);
+  auto applied = inserter.process_candidates_sequentially(results, config.verbose);
   
   // Final statistics
+  auto end_time = high_resolution_clock::now();
+  auto duration = duration_cast<milliseconds>(end_time - start_time);
   int final_gates = aig.nGates;
-  
+  int successful_resubs = 0;
+  for (bool success : applied) {
+    if (success) successful_resubs++;
+  }
   if (config.show_stats || config.verbose) {
     std::cout << "\nResubstitution complete:\n";
     std::cout << "  Windows extracted: " << windows.size() << "\n";
@@ -161,7 +153,6 @@ int main(int argc, char** argv) {
     std::cout << "  Time: " << duration.count() << " ms\n";
     std::cout << "  Initial gates: " << initial_gates << "\n";
     std::cout << "  Final gates: " << final_gates << "\n";
-    
     int gate_change = final_gates - initial_gates;
     if (gate_change > 0) {
       std::cout << "  Gate change: +" << gate_change << " gates added\n";

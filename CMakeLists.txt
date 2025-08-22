@@ -33,7 +33,7 @@ set(CPU_LIB_SOURCES
     src/cpu/simulation.cpp
     src/cpu/feasibility.cpp
     src/cpu/synthesis.cpp
-    src/cpu/conflict.cpp
+    src/cpu/insertion.cpp
 )
 
 set(CUDA_SOURCES
@@ -57,7 +57,7 @@ set_target_properties(fresub_cuda PROPERTIES
 )
 
 # Main executable - clean resubstitution engine (TEMPORARILY ENABLED FOR TESTING)
-add_executable(fresub src/cpu/main_resubstitution.cpp)
+add_executable(fresub src/cpu/main.cpp)
 
 # Link libraries - includes come automatically from fresub_cpu's dependencies
 target_link_libraries(fresub
