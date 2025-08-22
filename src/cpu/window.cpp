@@ -87,6 +87,7 @@ namespace fresub {
 	  window.divisors.push_back(node);
 	}
       }
+      window.mffc_size = mffc.size();
     }
   }
 

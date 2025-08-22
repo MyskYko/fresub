@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <random>
 
 #include <aig.hpp>
 
@@ -77,8 +78,12 @@ int main(int argc, char** argv) {
   }
         
   // Collect resubstitution results
+  std::mt19937 rng;
   std::vector<Result> results;
   for (const auto& window : windows) {
+    if (window.inputs.size() != config.max_cut_size) {
+      continue;
+    }
     if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
       continue; // Too small for 4-input feasiblity
     }
@@ -97,7 +102,7 @@ int main(int argc, char** argv) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
-    auto selected_divisor_indices = feasible_combinations[0]; // Use the first feasible combination for now
+    auto selected_divisor_indices = feasible_combinations[rng() % feasible_combinations.size()]; // Use a random feasible combination for now
     if (config.verbose) {
       std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
@@ -110,10 +115,12 @@ int main(int argc, char** argv) {
     // Synthesis
     std::vector<std::vector<bool>> br;
     convert_to_exopt_format(truth_tables, selected_divisor_indices, window.inputs.size(), br);
-    aigman* synthesized_aig = synthesize_circuit(br, 10);
+    aigman* synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
     if (!synthesized_aig) {
-      std::cerr << "  Synthesis failed: no solution found within gate limit\n";
-      return 1;
+      if (config.verbose) {
+	std::cout << "  Synthesis failed: no solution found within gate limit\n";
+      }
+      continue;
     }
     if (config.verbose) {
       std::cout << "  ✓ Synthesis successful: " << synthesized_aig->nGates << " gates\n";

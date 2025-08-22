@@ -15,6 +15,7 @@ namespace fresub {
     std::vector<int> nodes;      // All nodes in window
     std::vector<int> divisors;   // Window nodes - MFFC(target)
     int cut_id;                  // ID of the cut that generated this window
+    int mffc_size;
   };
 
   // Window extraction using exopt's cut enumeration

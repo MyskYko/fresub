@@ -43,7 +43,7 @@ namespace fresub {
     SynthMan<KissatSolver> synth_man(br, nullptr);
     // Attempt synthesis
     aigman* aig = nullptr;
-    for(int i = 0; !aig && i < max_gates; i++) {
+    for(int i = 0; !aig && i <= max_gates; i++) {
       aig = synth_man.Synth(i);
     }
     // Return synthesized AIG or nullptr if synthesis failed
