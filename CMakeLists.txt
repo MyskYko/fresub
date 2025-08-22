@@ -22,7 +22,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 find_package(Threads REQUIRED)
 
 # Add exopt as a subdirectory (now included in lib/)
-add_subdirectory(lib/exopt)
+add_subdirectory(lib)
 
 # The exopt_lib target will provide all necessary includes through its PUBLIC properties
 # No need to manually set include paths - they come automatically from target_link_libraries
@@ -47,6 +47,7 @@ add_library(fresub_cpu STATIC ${CPU_LIB_SOURCES})
 target_link_libraries(fresub_cpu PUBLIC 
     Threads::Threads
     exopt_lib  # This brings in all exopt dependencies and includes automatically
+    mockturtle  # Add mockturtle library for alternative synthesis
 )
 
 # Create CUDA library
