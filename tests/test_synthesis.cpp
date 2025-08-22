@@ -406,6 +406,108 @@ void test_end_to_end_pipeline() {
 }
 
 // ============================================================================
+// TEST 7: Mockturtle Synthesis
+// ============================================================================
+
+void test_mockturtle_synthesis() {
+    std::cout << "=== TESTING MOCKTURTLE SYNTHESIS ===\n";
+    
+    // Test 1: 4-input AND function
+    {
+        std::cout << "\n  Testing 4-input AND with mockturtle\n";
+        
+        std::vector<std::vector<bool>> br(16, std::vector<bool>(2, true));
+        
+        // Set up 4-input AND: only pattern 15 (1111) should output 1
+        for (int p = 0; p < 16; p++) {
+            bool output = (p == 15); // Only all inputs = 1 gives output 1
+            br[p][output ? 1 : 0] = true;
+            br[p][output ? 0 : 1] = false;
+        }
+        
+        try {
+            aigman* result = synthesize_circuit_mockturtle(br, 10); // Allow up to 10 gates
+            std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+            if (result) {
+                std::cout << " (" << result->nGates << " gates)";
+                delete result; // Clean up
+            }
+            std::cout << "\n";
+            ASSERT(result != nullptr);
+        } catch (const std::exception& e) {
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
+        }
+    }
+    
+    // Test 2: 4-input XOR function
+    {
+        std::cout << "\n  Testing 4-input XOR with mockturtle\n";
+        
+        std::vector<std::vector<bool>> br(16, std::vector<bool>(2, true));
+        
+        // Set up 4-input XOR: output 1 if odd number of inputs are 1
+        for (int p = 0; p < 16; p++) {
+            int bit_count = __builtin_popcount(p);
+            bool output = (bit_count % 2 == 1);
+            br[p][output ? 1 : 0] = true;
+            br[p][output ? 0 : 1] = false;
+        }
+        
+        try {
+            aigman* result = synthesize_circuit_mockturtle(br, 10); // Allow up to 10 gates
+            std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+            if (result) {
+                std::cout << " (" << result->nGates << " gates)";
+                delete result; // Clean up
+            }
+            std::cout << "\n";
+            ASSERT(result != nullptr);
+        } catch (const std::exception& e) {
+            std::cout << "    Error: " << e.what() << "\n";
+            ASSERT(false);
+        }
+    }
+    
+    // Test 3: Gate limit constraint
+    {
+        std::cout << "\n  Testing gate limit constraint (XOR with 1 gate limit)\n";
+        
+        // 4-input XOR: should need more than 1 gate
+        std::vector<std::vector<bool>> br(16, std::vector<bool>(2, true));
+        for (int p = 0; p < 16; p++) {
+            // XOR: output 1 when odd number of inputs are 1
+            int count = 0;
+            for (int i = 0; i < 4; i++) {
+                if ((p >> i) & 1) count++;
+            }
+            bool output = (count % 2) == 1;
+            br[p][output ? 1 : 0] = true;
+            br[p][output ? 0 : 1] = false;
+        }
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 1); // Very restrictive limit
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED (expected)") << "\n";
+        if (result) delete result; // Clean up if somehow succeeded
+        ASSERT(result == nullptr); // Should fail due to gate limit
+    }
+    
+    // Test 4: Wrong size (should fail)
+    {
+        std::cout << "\n  Testing wrong input size (should fail)\n";
+        
+        std::vector<std::vector<bool>> br(8, std::vector<bool>(2, true)); // 3-input, not 4
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED (expected)") << "\n";
+        if (result) delete result; // Clean up if somehow succeeded
+        ASSERT(result == nullptr); // Should fail for non-4-input
+    }
+    
+    std::cout << "\n  ✓ Mockturtle synthesis testing completed\n\n";
+}
+
+// ============================================================================
 // MAIN TEST DRIVER
 // ============================================================================
 
@@ -420,6 +522,7 @@ int main() {
     test_error_conditions();
     test_conversion_function();
     test_end_to_end_pipeline();
+    test_mockturtle_synthesis();
     
     std::cout << "========================================\n";
     std::cout << "         TEST RESULTS SUMMARY          \n";
