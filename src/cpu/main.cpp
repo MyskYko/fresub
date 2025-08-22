@@ -81,9 +81,6 @@ int main(int argc, char** argv) {
   std::mt19937 rng;
   std::vector<Result> results;
   for (const auto& window : windows) {
-    if (window.inputs.size() != config.max_cut_size) {
-      continue;
-    }
     if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
       continue; // Too small for 4-input feasiblity
     }
