@@ -7,7 +7,7 @@
 #include "window.hpp"
 #include "simulation.hpp"
 #include "feasibility.hpp"
-#include "synthesis_bridge.hpp"
+#include "synthesis.hpp"
 #include "conflict.hpp"
 #include <aig.hpp>  // For complete aigman type
 
@@ -82,7 +82,6 @@ int main(int argc, char** argv) {
     if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
       continue; // Too small for 4-input feasiblity
     }
-    
     if (config.verbose) {
       std::cout << "Processing window with target " << window.target_node 
 		<< " (" << window.inputs.size() << " inputs, " 
@@ -98,7 +97,7 @@ int main(int argc, char** argv) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
-    auto selected_divisor_indices = feasible_combinations[0]; // Use the first feasible combination
+    auto selected_divisor_indices = feasible_combinations[0]; // Use the first feasible combination for now
     if (config.verbose) {
       std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
@@ -109,32 +108,21 @@ int main(int argc, char** argv) {
     }
     
     // Synthesis
-    // Extract target truth table (last element) and selected divisor truth tables
-    std::vector<uint64_t> target_truth_table = truth_tables.back();
-    std::vector<std::vector<uint64_t>> selected_divisor_tts;
-    for (int idx : selected_divisor_indices) {
-      selected_divisor_tts.push_back(truth_tables[idx]);
-    }
-    
     std::vector<std::vector<bool>> br;
-    convert_to_exopt_format(target_truth_table, selected_divisor_tts, selected_divisor_indices, window.inputs.size(), br);
-    
-    SynthesisResult synthesis = synthesize_circuit(br, 10);
-    if (!synthesis.success) {
-      std::cerr << "  Synthesis failed: " << synthesis.description << "\n";
+    convert_to_exopt_format(truth_tables, selected_divisor_indices, window.inputs.size(), br);
+    aigman* synthesized_aig = synthesize_circuit(br, 10);
+    if (!synthesized_aig) {
+      std::cerr << "  Synthesis failed: no solution found within gate limit\n";
       return 1;
     }
-    
     if (config.verbose) {
-      std::cout << "  ✓ Synthesis successful: " << synthesis.synthesized_gates << " gates\n";
+      std::cout << "  ✓ Synthesis successful: " << synthesized_aig->nGates << " gates\n";
     }
     
     // Create selected divisor nodes from indices
     std::vector<int> selected_divisor_nodes;
     for (int idx : selected_divisor_indices) {
-      if (idx < static_cast<int>(window.divisors.size())) {
-	selected_divisor_nodes.push_back(window.divisors[idx]);
-      }
+      selected_divisor_nodes.push_back(window.divisors[idx]);
     }
     
     // Create and return resubstitution candidate (to be processed later)
@@ -142,7 +130,7 @@ int main(int argc, char** argv) {
       std::cout << "  ✓ Created resubstitution candidate for target node " 
 		<< window.target_node << "\n";
     }
-    candidates.emplace_back(synthesis.synthesized_aig, window.target_node, selected_divisor_nodes);
+    candidates.emplace_back(synthesized_aig, window.target_node, selected_divisor_nodes);
   }
         
   if (config.verbose) {

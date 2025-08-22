@@ -1,5 +1,5 @@
 #include "window.hpp"
-#include "synthesis_bridge.hpp"
+#include "synthesis.hpp"
 #include "conflict.hpp"
 #include <aig.hpp>
 #include <iostream>
