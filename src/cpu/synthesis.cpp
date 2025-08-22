@@ -76,7 +76,17 @@ namespace fresub {
   }
 
   // Helper function to try synthesis with a specific truth table
-  aigman* try_synthesis_with_truth_table(uint16_t truth_table, int max_gates) {
+  aigman* try_synthesis_with_truth_table(uint16_t truth_table, int num_inputs, int max_gates) {
+    // Extend truth table to 4 inputs if needed
+    uint16_t extended_truth_table = truth_table;
+    if (num_inputs < 4) {
+      // Extend by doubling: shift and OR for each missing input
+      for (int missing = num_inputs; missing < 4; missing++) {
+        int shift_amount = 1 << missing; // 2^missing
+        extended_truth_table |= (extended_truth_table << shift_amount);
+      }
+    }
+
     try {
       // Get the static library instance
       auto& lib = get_mockturtle_library();
@@ -84,7 +94,7 @@ namespace fresub {
       // Create truth table object
       using TT = kitty::static_truth_table<4>;
       TT tt;
-      std::vector<uint16_t> words = {truth_table};
+      std::vector<uint16_t> words = {extended_truth_table};
       kitty::create_from_words(tt, words.begin(), words.end());
       
       // Perform NPN canonicalization
@@ -162,18 +172,26 @@ namespace fresub {
       result_ntk.create_po(output_signal);
       
       // Convert mockturtle AIG to aigman
-      aigman* result_aig = new aigman(4, 1);
+      aigman* result_aig = new aigman(num_inputs, 1);
       
       // Map mockturtle nodes to aigman nodes  
       std::unordered_map<mockturtle::aig_network::node, int> node_map;
       
-      // Map primary inputs (nodes 1-4 in aigman)
+      // Map primary inputs (only first num_inputs in aigman)
+      int pi_count = 0;
       result_ntk.foreach_pi([&](auto const& n, auto i) {
-        node_map[n] = i + 1; // aigman PIs start at 1
+        (void)i; // Suppress unused parameter warning
+        if (pi_count < num_inputs) {
+          node_map[n] = pi_count + 1; // aigman PIs start at 1
+          pi_count++;
+        } else {
+          // Unused inputs in the extended truth table - map to constant 0
+          node_map[n] = 0; // This will create literal 0 (constant false)
+        }
       });
       
       // Process gates in topological order
-      int next_node = 5; // First internal node in aigman
+      int next_node = num_inputs + 1; // First internal node in aigman
       result_ntk.foreach_gate([&](auto const& n) {
         // Get fanins using foreach_fanin
         std::vector<int> fanin_lits;
@@ -208,7 +226,7 @@ namespace fresub {
       });
       
       // Update aigman metadata
-      result_aig->nGates = next_node - 5;
+      result_aig->nGates = next_node - num_inputs - 1;
       result_aig->nObjs = next_node;
       
       return result_aig;
@@ -219,9 +237,11 @@ namespace fresub {
   }
 
   aigman* synthesize_circuit_mockturtle(const vector<vector<bool>>& br, int max_gates) {
-    // Only support 4-input functions (16 patterns)
-    if (br.size() != 16) {
-      return nullptr;
+    // Determine number of inputs from BR size using ceiling log2
+    int br_size = br.size();
+    int num_inputs = 0;
+    while ((1 << num_inputs) < br_size) {
+      num_inputs++;
     }
     
     // Identify don't care patterns and fixed patterns
@@ -260,7 +280,7 @@ namespace fresub {
     
     // If no don't cares, try the fixed truth table
     if (num_dont_cares == 0) {
-      return try_synthesis_with_truth_table(fixed_truth_table, max_gates);
+      return try_synthesis_with_truth_table(fixed_truth_table, num_inputs, max_gates);
     }
     
     // Exhaustive search over all don't care assignments
@@ -287,7 +307,7 @@ namespace fresub {
         }
       }
       
-      aigman* result = try_synthesis_with_truth_table(truth_table, max_gates);
+      aigman* result = try_synthesis_with_truth_table(truth_table, num_inputs, max_gates);
       if (result && result->nGates < best_gates) {
         if (best_result) delete best_result;
         best_result = result;

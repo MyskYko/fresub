@@ -145,7 +145,186 @@ void test_constant_functions() {
 }
 
 // ============================================================================
-// TEST 3: Multi-Input Functions
+// TEST 3: Mockturtle Synthesis with Variable Input Counts
+// ============================================================================
+void test_mockturtle_variable_inputs() {
+    std::cout << "=== Test 3: Mockturtle Variable Input Counts ===\n";
+    
+    // Test 0-input (constant) function
+    {
+        std::cout << "\n  Testing 0-input constant 0\n";
+        std::vector<std::vector<bool>> br(1, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // Constant 0
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates == 0);
+            ASSERT(result->nPis == 0);
+            ASSERT(result->nPos == 1);
+            ASSERT(result->nObjs == 1);  // Just constant node
+            ASSERT(result->vPos.size() == 1);
+            ASSERT(result->vPos[0] == 0);  // Output is constant 0
+            std::cout << "\n    Structure: nObjs=" << result->nObjs 
+                      << ", vObjs.size=" << result->vObjs.size()
+                      << ", output=" << result->vPos[0];
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 1-input buffer function
+    {
+        std::cout << "\n  Testing 1-input buffer (identity)\n";
+        std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // 0 -> 0
+        br[1][0] = false; br[1][1] = true;   // 1 -> 1
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates == 0);
+            ASSERT(result->nPis == 1);
+            ASSERT(result->nPos == 1);
+            ASSERT(result->nObjs == 2);  // Constant + 1 PI
+            ASSERT(result->vPos.size() == 1);
+            ASSERT(result->vPos[0] == 2);  // Output is PI 1 (literal 2)
+            std::cout << "\n    Structure: nObjs=" << result->nObjs 
+                      << ", vObjs.size=" << result->vObjs.size()
+                      << ", output=" << result->vPos[0];
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 1-input inverter function
+    {
+        std::cout << "\n  Testing 1-input inverter\n";
+        std::vector<std::vector<bool>> br(2, std::vector<bool>(2));
+        br[0][0] = false; br[0][1] = true;   // 0 -> 1
+        br[1][0] = true;  br[1][1] = false;  // 1 -> 0
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates == 0);  // Inverter is free in AIG
+            ASSERT(result->nPis == 1);
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 2-input AND function
+    {
+        std::cout << "\n  Testing 2-input AND\n";
+        std::vector<std::vector<bool>> br(4, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // 00 -> 0
+        br[1][0] = true;  br[1][1] = false;  // 01 -> 0
+        br[2][0] = true;  br[2][1] = false;  // 10 -> 0
+        br[3][0] = false; br[3][1] = true;   // 11 -> 1
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates == 1);
+            ASSERT(result->nPis == 2);
+            ASSERT(result->nPos == 1);
+            ASSERT(result->nObjs == 4);  // Constant + 2 PIs + 1 gate
+            ASSERT(result->vObjs.size() >= 6);  // Need space for gate at position 3
+            // Verify gate structure: node 3 should have two fanins
+            ASSERT(result->vObjs[6] != 0 || result->vObjs[7] != 0);  // Gate fanins
+            std::cout << "\n    Structure: nObjs=" << result->nObjs 
+                      << ", vObjs.size=" << result->vObjs.size()
+                      << ", gate fanins=[" << result->vObjs[6] << "," << result->vObjs[7] << "]"
+                      << ", output=" << result->vPos[0];
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 2-input XOR function
+    {
+        std::cout << "\n  Testing 2-input XOR\n";
+        std::vector<std::vector<bool>> br(4, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // 00 -> 0
+        br[1][0] = false; br[1][1] = true;   // 01 -> 1
+        br[2][0] = false; br[2][1] = true;   // 10 -> 1
+        br[3][0] = true;  br[3][1] = false;  // 11 -> 0
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates <= 3);  // XOR needs at most 3 AND gates
+            ASSERT(result->nPis == 2);
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 3-input majority function
+    {
+        std::cout << "\n  Testing 3-input majority\n";
+        std::vector<std::vector<bool>> br(8, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // 000 -> 0
+        br[1][0] = true;  br[1][1] = false;  // 001 -> 0
+        br[2][0] = true;  br[2][1] = false;  // 010 -> 0
+        br[3][0] = false; br[3][1] = true;   // 011 -> 1
+        br[4][0] = true;  br[4][1] = false;  // 100 -> 0
+        br[5][0] = false; br[5][1] = true;   // 101 -> 1
+        br[6][0] = false; br[6][1] = true;   // 110 -> 1
+        br[7][0] = false; br[7][1] = true;   // 111 -> 1
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nGates <= 4);  // Majority needs at most 4 AND gates
+            ASSERT(result->nPis == 3);
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    // Test 3-input with don't cares
+    {
+        std::cout << "\n  Testing 3-input with don't cares\n";
+        std::vector<std::vector<bool>> br(8, std::vector<bool>(2));
+        br[0][0] = true;  br[0][1] = false;  // 000 -> 0
+        br[1][0] = true;  br[1][1] = true;   // 001 -> don't care
+        br[2][0] = true;  br[2][1] = false;  // 010 -> 0
+        br[3][0] = false; br[3][1] = true;   // 011 -> 1
+        br[4][0] = true;  br[4][1] = true;   // 100 -> don't care
+        br[5][0] = false; br[5][1] = true;   // 101 -> 1
+        br[6][0] = false; br[6][1] = true;   // 110 -> 1
+        br[7][0] = false; br[7][1] = true;   // 111 -> 1
+        
+        aigman* result = synthesize_circuit_mockturtle(br, 10);
+        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED");
+        if (result) {
+            std::cout << " (" << result->nGates << " gates, " << result->nPis << " inputs)";
+            ASSERT(result->nPis == 3);
+            delete result;
+        }
+        std::cout << "\n";
+        ASSERT(result != nullptr);
+    }
+    
+    std::cout << "\n  ✓ Mockturtle variable input tests completed\n\n";
+}
+
+// ============================================================================
+// TEST 4: Multi-Input Functions
 // ============================================================================
 
 void test_multi_input_functions() {
@@ -492,18 +671,6 @@ void test_mockturtle_synthesis() {
         ASSERT(result == nullptr); // Should fail due to gate limit
     }
     
-    // Test 4: Wrong size (should fail)
-    {
-        std::cout << "\n  Testing wrong input size (should fail)\n";
-        
-        std::vector<std::vector<bool>> br(8, std::vector<bool>(2, true)); // 3-input, not 4
-        
-        aigman* result = synthesize_circuit_mockturtle(br, 10);
-        std::cout << "    Result: " << (result ? "SUCCESS" : "FAILED (expected)") << "\n";
-        if (result) delete result; // Clean up if somehow succeeded
-        ASSERT(result == nullptr); // Should fail for non-4-input
-    }
-    
     std::cout << "\n  ✓ Mockturtle synthesis testing completed\n\n";
 }
 
@@ -518,6 +685,7 @@ int main() {
     
     test_basic_logic_functions();
     test_constant_functions();
+    test_mockturtle_variable_inputs();  // Test variable input counts for mockturtle
     test_multi_input_functions();
     test_error_conditions();
     test_conversion_function();
