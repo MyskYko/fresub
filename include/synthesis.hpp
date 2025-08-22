@@ -1,8 +1,9 @@
 #pragma once
 
-#include <vector>
 #include <cstdint>
-#include <aig.hpp>  // Direct exopt header inclusion
+#include <vector>
+
+#include <aig.hpp>
 
 namespace fresub {
 

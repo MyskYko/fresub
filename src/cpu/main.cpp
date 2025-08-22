@@ -1,15 +1,16 @@
-#include <iostream>
-#include <fstream>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <fstream>
+#include <iostream>
 
-#include "window.hpp"
-#include "simulation.hpp"
+#include <aig.hpp>
+
 #include "feasibility.hpp"
-#include "synthesis.hpp"
 #include "insertion.hpp"
-#include <aig.hpp>  // For complete aigman type
+#include "simulation.hpp"
+#include "synthesis.hpp"
+#include "window.hpp"
 
 using namespace fresub;
 using namespace std::chrono;

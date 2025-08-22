@@ -1,7 +1,5 @@
 #include "feasibility.hpp"
-#include <algorithm>
-#include <map>
-#include <set>
+
 #include <iostream>
 
 namespace fresub {

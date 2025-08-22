@@ -1,8 +1,7 @@
 #pragma once
 
-#include "window.hpp"
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 namespace fresub {
 

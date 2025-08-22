@@ -1,10 +1,8 @@
 #pragma once
 
-#include "window.hpp"
-#include <aig.hpp>
 #include <vector>
-#include <unordered_set>
-#include <functional>
+
+#include <aig.hpp>
 
 namespace fresub {
 

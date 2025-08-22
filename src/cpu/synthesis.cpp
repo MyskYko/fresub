@@ -1,7 +1,7 @@
 #include "synthesis.hpp"
-#include "synth.hpp"        // exopt's synthesis
-#include "kissat_solver.hpp"
-#include <set>
+
+#include <kissat_solver.hpp>
+#include <synth.hpp>
 
 using namespace std;
 

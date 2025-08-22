@@ -1,8 +1,8 @@
-#include "synthesis.hpp"
-#include "feasibility.hpp"
+#include <cassert>
 #include <iostream>
 #include <vector>
-#include <cassert>
+
+#include "synthesis.hpp"
 
 using namespace fresub;
 

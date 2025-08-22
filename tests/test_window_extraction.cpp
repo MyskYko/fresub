@@ -1,8 +1,10 @@
-#include "window.hpp"
-#include <aig.hpp>
-#include <iostream>
-#include <cassert>
 #include <algorithm>
+#include <cassert>
+#include <iostream>
+
+#include <aig.hpp>
+
+#include "window.hpp"
 
 int total_tests = 0;
 int passed_tests = 0;
@@ -249,17 +251,22 @@ void test_hardcoded_aig() {
 
 
 int main() {
-    std::cout << "Window Extraction Test (aigman + exopt)\n";
+    std::cout << "========================================\n";
+    std::cout << "    WINDOW EXTRACTION TEST SUITE       \n";
     std::cout << "========================================\n\n";
     
     // Test hardcoded AIG for verification
     test_hardcoded_aig();
     
+    std::cout << "========================================\n";
+    std::cout << "         TEST RESULTS SUMMARY          \n";
+    std::cout << "========================================\n";
+    
     if (passed_tests == total_tests) {
-        std::cout << "\n✅ PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        std::cout << "🎉 ALL TESTS PASSED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 0;
     } else {
-        std::cout << "\n❌ FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        std::cout << "❌ TESTS FAILED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 1;
     }
 }

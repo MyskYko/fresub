@@ -1,6 +1,5 @@
 #include "insertion.hpp"
-#include <functional>
-#include <queue>
+
 #include <iostream>
 
 namespace fresub {

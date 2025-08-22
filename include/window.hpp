@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <cstdint>
 #include <unordered_set>
+#include <vector>
+
 #include <aig.hpp>
 #include <cut.hpp>
 

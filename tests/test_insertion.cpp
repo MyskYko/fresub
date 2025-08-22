@@ -1,9 +1,10 @@
-#include "window.hpp"
-#include "synthesis.hpp"
-#include "insertion.hpp"
-#include <aig.hpp>
-#include <iostream>
 #include <cassert>
+#include <iostream>
+
+#include <aig.hpp>
+
+#include "insertion.hpp"
+#include "window.hpp"
 
 int total_tests = 0;
 int passed_tests = 0;
@@ -251,17 +252,22 @@ void test_conflict_resolution() {
 }
 
 int main() {
-    std::cout << "Insertion Test (aigman native)\n";
-    std::cout << "==============================\n\n";
+    std::cout << "========================================\n";
+    std::cout << "        INSERTION TEST SUITE           \n";
+    std::cout << "========================================\n\n";
     
     test_aigman_import();
     test_conflict_resolution();
     
+    std::cout << "========================================\n";
+    std::cout << "         TEST RESULTS SUMMARY          \n";
+    std::cout << "========================================\n";
+    
     if (passed_tests == total_tests) {
-        std::cout << "\n✅ PASSED (" << passed_tests << "/" << total_tests << ")\n";
+        std::cout << "🎉 ALL TESTS PASSED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 0;
     } else {
-        std::cout << "\n❌ FAILED (" << passed_tests << "/" << total_tests << ")\n";
+        std::cout << "❌ TESTS FAILED! (" << passed_tests << "/" << total_tests << ")\n\n";
         return 1;
     }
 }
