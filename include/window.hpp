@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <unordered_set>
 #include <vector>
 
@@ -16,6 +17,8 @@ namespace fresub {
     std::vector<int> divisors;   // Window nodes - MFFC(target)
     int cut_id;                  // ID of the cut that generated this window
     int mffc_size;
+    std::vector<std::vector<uint64_t>> truth_tables;
+    std::vector<std::vector<int>> feasible_combinations;
   };
 
   // Window extraction using exopt's cut enumeration

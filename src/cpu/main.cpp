@@ -86,30 +86,39 @@ int main(int argc, char** argv) {
   if (config.verbose) {
     std::cout << "Extracted " << windows.size() << " windows\n";
   }
-        
-  // Collect resubstitution results
-  std::mt19937 rng;
+
+  // Exclude windows with less than 4 divisors for now
+  std::vector<Window> windows_old = std::move(windows);
+  windows.clear();
+  for (auto& window : windows_old) {
+    if (window.divisors.size() < 4) {
+      continue;
+    }
+    windows.push_back(std::move(window));
+  }
+  
+  // Compute truth tables
+  for (auto& window : windows) {
+    window.truth_tables = compute_truth_tables_for_window(aig, window, config.verbose);
+  }
+
+  // Feasibility check
+  feasibility_check_cpu(windows.begin(), windows.end());
+  
+  // Synthesis
   std::vector<Result> results;
-  for (const auto& window : windows) {
-    if (window.divisors.size() < 4 || (!aig.vDeads.empty() && aig.vDeads[window.target_node])) {
-      continue; // Too small for 4-input feasiblity
-    }
+  std::mt19937 rng;
+  for (auto& window : windows) {
     if (config.verbose) {
-      std::cout << "Processing window with target " << window.target_node 
-		<< " (" << window.inputs.size() << " inputs, " 
+      std::cout << "Processing window with target " << window.target_node
+		<< " (" << window.inputs.size() << " inputs, "
 		<< window.divisors.size() << " divisors)\n";
-    }
-    
-    // Compute truth tables
-    auto truth_tables = compute_truth_tables_for_window(aig, window, config.verbose);
-    
-    // Feasibility check
-    auto feasible_combinations = find_feasible_4resub(truth_tables, window.inputs.size());
-    if (feasible_combinations.empty()) {
+    }    
+    if (window.feasible_combinations.empty()) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
-    auto selected_divisor_indices = feasible_combinations[rng() % feasible_combinations.size()]; // Use a random feasible combination for now
+    auto selected_divisor_indices = window.feasible_combinations[rng() % window.feasible_combinations.size()]; // Use a random feasible combination for now
     if (config.verbose) {
       std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
@@ -118,10 +127,8 @@ int main(int argc, char** argv) {
       }
       std::cout << "}\n";
     }
-    
-    // Synthesis
     std::vector<std::vector<bool>> br;
-    convert_to_exopt_format(truth_tables, selected_divisor_indices, window.inputs.size(), br);
+    convert_to_exopt_format(window.truth_tables, selected_divisor_indices, window.inputs.size(), br);
     aigman* synthesized_aig;
     if (config.use_mockturtle) {
       synthesized_aig = synthesize_circuit_mockturtle(br, window.mffc_size - 1);

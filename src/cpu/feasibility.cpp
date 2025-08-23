@@ -83,4 +83,11 @@ namespace fresub {
     return feasible_combinations;
   }
 
+  void feasibility_check_cpu(std::vector<Window>::iterator it, std::vector<Window>::iterator end) {
+    while(it != end) {
+      it->feasible_combinations = find_feasible_4resub(it->truth_tables, it->inputs.size());
+      it++;
+    }
+  }
+
 } // namespace fresub
