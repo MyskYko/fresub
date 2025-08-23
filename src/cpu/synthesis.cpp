@@ -18,7 +18,7 @@ using namespace std;
 namespace fresub {
 
   // Convert truth tables to exopt binary relation format
-  void convert_to_exopt_format(const vector<vector<uint64_t>>& truth_tables, const vector<int>& selected_divisors, int num_inputs, vector<vector<bool>>& br) {
+  void generate_relation(const vector<vector<uint64_t>>& truth_tables, const vector<int>& selected_divisors, int num_inputs, vector<vector<bool>>& br) {
     // We compute target function in terms of selected divisors
     // br[divisor_pattern][target_value] = can this divisor pattern produce this target value?
     // Initialize with all true (everything is don't care initially)

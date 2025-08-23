@@ -408,7 +408,7 @@ void test_conversion_function() {
         int num_inputs = 2;
         
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         ASSERT(br.size() == 4);
@@ -432,7 +432,7 @@ void test_conversion_function() {
         int num_inputs = 2;
         
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         ASSERT(br.size() == 16);
@@ -454,7 +454,7 @@ void test_conversion_function() {
         std::vector<int> selected_divisors = {0, 1, 2};
         
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         ASSERT(br.size() == 8); // 2^7 patterns
@@ -489,7 +489,7 @@ void test_end_to_end_pipeline() {
         
         // Step 1: Convert truth tables to synthesis format
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         std::cout << "    Step 1: ✓ Conversion successful\n";
@@ -525,7 +525,7 @@ void test_end_to_end_pipeline() {
         
         // Step 1: Convert 
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         std::cout << "    Step 1: ✓ Conversion successful\n";
@@ -561,7 +561,7 @@ void test_end_to_end_pipeline() {
         
         // Step 1: Convert multi-word truth tables
         std::vector<std::vector<bool>> br;
-        convert_to_exopt_format(truth_tables, selected_divisors,
+        generate_relation(truth_tables, selected_divisors,
                                num_inputs, br);
         
         std::cout << "    Step 1: ✓ Multi-word conversion successful\n";

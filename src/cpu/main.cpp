@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
       std::cout << "}\n";
     }
     std::vector<std::vector<bool>> br;
-    convert_to_exopt_format(window.truth_tables, selected_divisor_indices, window.inputs.size(), br);
+    generate_relation(window.truth_tables, selected_divisor_indices, window.inputs.size(), br);
     aigman* synthesized_aig;
     if (config.use_mockturtle) {
       synthesized_aig = synthesize_circuit_mockturtle(br, window.mffc_size - 1);
