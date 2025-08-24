@@ -13,6 +13,11 @@
 #include "synthesis.hpp"
 #include "window.hpp"
 
+// Forward declare CUDA function to avoid requiring CUDA headers when not needed
+namespace fresub {
+  void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
+}
+
 using namespace fresub;
 using namespace std::chrono;
 
@@ -23,6 +28,7 @@ struct Config {
     bool verbose = false;
     bool show_stats = false;
     bool use_mockturtle = true;  // Default to mockturtle synthesis
+    bool use_cuda = false;       // Default to CPU feasibility check
 };
 
 
@@ -40,6 +46,8 @@ int main(int argc, char** argv) {
       config.use_mockturtle = false;
     } else if (strcmp(argv[i], "--mockturtle") == 0) {
       config.use_mockturtle = true;
+    } else if (strcmp(argv[i], "--cuda") == 0) {
+      config.use_cuda = true;
     } else if (argv[i][0] != '-') {
       if (config.input_file.empty()) {
 	config.input_file = argv[i];
@@ -56,6 +64,7 @@ int main(int argc, char** argv) {
     std::cerr << "  -s            Show statistics\n";
     std::cerr << "  --exopt       Use SAT-based synthesis (exopt)\n";
     std::cerr << "  --mockturtle  Use library-based synthesis (mockturtle, default)\n";
+    std::cerr << "  --cuda        Use CUDA for feasibility checking\n";
     return 1;
   }
   
@@ -71,6 +80,7 @@ int main(int argc, char** argv) {
   }
   if (config.verbose) {
     std::cout << "Using " << (config.use_mockturtle ? "mockturtle library-based" : "exopt SAT-based") << " synthesis\n";
+    std::cout << "Using " << (config.use_cuda ? "CUDA" : "CPU") << " feasibility checking\n";
   }
 
   // Start measurement
@@ -103,7 +113,11 @@ int main(int argc, char** argv) {
   }
 
   // Feasibility check
-  feasibility_check_cpu(windows.begin(), windows.end());
+  if (config.use_cuda) {
+    feasibility_check_cuda(windows.begin(), windows.end());
+  } else {
+    feasibility_check_cpu(windows.begin(), windows.end());
+  }
   
   // Synthesis
   std::vector<Result> results;

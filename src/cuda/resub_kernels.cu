@@ -1,365 +1,286 @@
 #include "cuda_kernels.cuh"
 #include <cstdio>
 #include <algorithm>
+#include <vector>
+#include <cstdint>
+
+// Need to include Window definition - must match the real struct layout
+// This is a bit hacky but avoids pulling in the full AIG dependencies
+namespace fresub {
+struct Window {
+    int target_node;
+    std::vector<int> inputs;     // Window inputs (cut leaves)
+    std::vector<int> nodes;      // All nodes in window
+    std::vector<int> divisors;   // Window nodes - MFFC(target)
+    int cut_id;                  // ID of the cut that generated this window
+    int mffc_size;
+    std::vector<std::vector<uint64_t>> truth_tables;
+    std::vector<std::vector<int>> feasible_combinations;
+};
+}
+
+#define word_width 64
+#define THREADS_PER_PROBLEM 32
+#define BLOCK_SIZE 256
+
+// Check for CUDA error macro
+#ifndef CHECK_CUDA_ERROR
+#define CHECK_CUDA_ERROR(call) \
+    do { \
+        cudaError_t error = call; \
+        if (error != cudaSuccess) { \
+            fprintf(stderr, "CUDA error at %s:%d - %s\n", \
+                    __FILE__, __LINE__, cudaGetErrorString(error)); \
+            exit(1); \
+        } \
+    } while(0)
+#endif
 
 namespace fresub {
 namespace cuda {
 
-// Device function to check if a function can be implemented with given divisors
-__device__ bool check_implication(
-    const uint64_t* on_set,
-    const uint64_t* off_set,
-    const uint64_t* impl_func,
-    int num_words
-) {
-    // Check that impl_func covers on_set and doesn't intersect off_set
-    for (int i = 0; i < num_words; i++) {
-        // Must cover all on-set minterms
-        if ((on_set[i] & ~impl_func[i]) != 0) {
-            return false;
-        }
-        // Must not cover any off-set minterms
-        if ((off_set[i] & impl_func[i]) != 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// Find best subset of divisors that implements the target function
-__device__ uint32_t find_best_divisors(
-    const uint64_t* divisor_truths,
-    const uint64_t* target_on,
-    const uint64_t* target_off,
-    int num_divisors,
-    int num_words,
-    int max_size
-) {
-    uint32_t best_mask = 0;
+// CUDA kernel version of solve_resub_overlap using flattened array with variable divisor count
+__device__ int solve_resub_overlap_cuda(int i, int j, int k, int l, uint64_t *flat_problem, int nWords, int problem_offset, int n_divs) 
+{
+    uint32_t res = ((1U << i) | (1U << j) | (1U << k) | (1U << l)); 
+    uint64_t qs[32] = {0};
     
-    // Try all combinations up to max_size divisors
-    // This is simplified - in practice we'd use more sophisticated search
-    for (int size = 1; size <= max_size && size <= 4; size++) {
-        // Generate all k-combinations
-        if (size == 1) {
-            for (int i = 0; i < num_divisors; i++) {
-                if (check_implication(target_on, target_off, 
-                                     &divisor_truths[i * num_words], num_words)) {
-                    return (1U << i);
-                }
-            }
-        } else if (size == 2) {
-            for (int i = 0; i < num_divisors; i++) {
-                for (int j = i + 1; j < num_divisors; j++) {
-                    // Compute AND of two divisors
-                    uint64_t combined[MAX_TRUTH_WORDS];
-                    for (int w = 0; w < num_words; w++) {
-                        combined[w] = divisor_truths[i * num_words + w] & 
-                                     divisor_truths[j * num_words + w];
-                    }
-                    if (check_implication(target_on, target_off, combined, num_words)) {
-                        return (1U << i) | (1U << j);
-                    }
-                    
-                    // Try OR as well
-                    for (int w = 0; w < num_words; w++) {
-                        combined[w] = divisor_truths[i * num_words + w] | 
-                                     divisor_truths[j * num_words + w];
-                    }
-                    if (check_implication(target_on, target_off, combined, num_words)) {
-                        return (1U << i) | (1U << j);
-                    }
-                }
-            }
-        } else if (size == 3) {
-            for (int i = 0; i < num_divisors - 2; i++) {
-                for (int j = i + 1; j < num_divisors - 1; j++) {
-                    for (int k = j + 1; k < num_divisors; k++) {
-                        // Try various 3-input functions
-                        uint64_t combined[MAX_TRUTH_WORDS];
-                        
-                        // Example: (i & j) | k
-                        for (int w = 0; w < num_words; w++) {
-                            combined[w] = (divisor_truths[i * num_words + w] & 
-                                          divisor_truths[j * num_words + w]) |
-                                         divisor_truths[k * num_words + w];
-                        }
-                        if (check_implication(target_on, target_off, combined, num_words)) {
-                            return (1U << i) | (1U << j) | (1U << k);
-                        }
-                        
-                        // Example: i & j & k
-                        for (int w = 0; w < num_words; w++) {
-                            combined[w] = divisor_truths[i * num_words + w] & 
-                                         divisor_truths[j * num_words + w] &
-                                         divisor_truths[k * num_words + w];
-                        }
-                        if (check_implication(target_on, target_off, combined, num_words)) {
-                            return (1U << i) | (1U << j) | (1U << k);
-                        }
-                    }
-                }
-            }
-        } else if (size == 4) {
-            // Similar for 4 divisors, but more complex
-            // Simplified version here
-            for (int i = 0; i < num_divisors - 3; i++) {
-                for (int j = i + 1; j < num_divisors - 2; j++) {
-                    for (int k = j + 1; k < num_divisors - 1; k++) {
-                        for (int l = k + 1; l < num_divisors; l++) {
-                            uint64_t combined[MAX_TRUTH_WORDS];
-                            
-                            // Try: ((i & j) | (k & l))
-                            for (int w = 0; w < num_words; w++) {
-                                combined[w] = (divisor_truths[i * num_words + w] & 
-                                              divisor_truths[j * num_words + w]) |
-                                             (divisor_truths[k * num_words + w] &
-                                              divisor_truths[l * num_words + w]);
-                            }
-                            if (check_implication(target_on, target_off, combined, num_words)) {
-                                return (1U << i) | (1U << j) | (1U << k) | (1U << l);
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    for (int h = 0; h < nWords; h++) {
+        // Access flattened array: flat_problem[problem_offset + row_id * nWords + word_id]
+        uint64_t t_i = flat_problem[problem_offset + i * nWords + h];
+        uint64_t t_j = flat_problem[problem_offset + j * nWords + h];
+        uint64_t t_k = flat_problem[problem_offset + k * nWords + h];
+        uint64_t t_l = flat_problem[problem_offset + l * nWords + h];
+        // Target truth table is at position n_divs (last element)
+        uint64_t t_on = flat_problem[problem_offset + n_divs * nWords + h];
+        uint64_t t_off = ~t_on;  // Compute off-set from on-set like CPU version
+
+        qs[0]  |=  (t_off &  t_i &  t_j) & ( t_k &  t_l);
+        qs[1]  |=  (t_on  &  t_i &  t_j) & ( t_k &  t_l);
+        qs[2]  |=  (t_off & ~t_i &  t_j) & ( t_k &  t_l);
+        qs[3]  |=  (t_on  & ~t_i &  t_j) & ( t_k &  t_l);
+        qs[4]  |=  (t_off &  t_i & ~t_j) & ( t_k &  t_l);
+        qs[5]  |=  (t_on  &  t_i & ~t_j) & ( t_k &  t_l);
+        qs[6]  |=  (t_off & ~t_i & ~t_j) & ( t_k &  t_l);
+        qs[7]  |=  (t_on  & ~t_i & ~t_j) & ( t_k &  t_l);
+        qs[8]  |=  (t_off &  t_i &  t_j) & (~t_k &  t_l);
+        qs[9]  |=  (t_on  &  t_i &  t_j) & (~t_k &  t_l);
+        qs[10] |=  (t_off & ~t_i &  t_j) & (~t_k &  t_l);
+        qs[11] |=  (t_on  & ~t_i &  t_j) & (~t_k &  t_l);
+        qs[12] |=  (t_off &  t_i & ~t_j) & (~t_k &  t_l);
+        qs[13] |=  (t_on  &  t_i & ~t_j) & (~t_k &  t_l);
+        qs[14] |=  (t_off & ~t_i & ~t_j) & (~t_k &  t_l);
+        qs[15] |=  (t_on  & ~t_i & ~t_j) & (~t_k &  t_l);
+        qs[16] |=  (t_off &  t_i &  t_j) & ( t_k & ~t_l);
+        qs[17] |=  (t_on  &  t_i &  t_j) & ( t_k & ~t_l);
+        qs[18] |=  (t_off & ~t_i &  t_j) & ( t_k & ~t_l);
+        qs[19] |=  (t_on  & ~t_i &  t_j) & ( t_k & ~t_l);
+        qs[20] |=  (t_off &  t_i & ~t_j) & ( t_k & ~t_l);
+        qs[21] |=  (t_on  &  t_i & ~t_j) & ( t_k & ~t_l);
+        qs[22] |=  (t_off & ~t_i & ~t_j) & ( t_k & ~t_l);
+        qs[23] |=  (t_on  & ~t_i & ~t_j) & ( t_k & ~t_l);
+        qs[24] |=  (t_off &  t_i &  t_j) & (~t_k & ~t_l);
+        qs[25] |=  (t_on  &  t_i &  t_j) & (~t_k & ~t_l);
+        qs[26] |=  (t_off & ~t_i &  t_j) & (~t_k & ~t_l);
+        qs[27] |=  (t_on  & ~t_i &  t_j) & (~t_k & ~t_l);
+        qs[28] |=  (t_off &  t_i & ~t_j) & (~t_k & ~t_l);
+        qs[29] |=  (t_on  &  t_i & ~t_j) & (~t_k & ~t_l);
+        qs[30] |=  (t_off & ~t_i & ~t_j) & (~t_k & ~t_l);
+        qs[31] |=  (t_on  & ~t_i & ~t_j) & (~t_k & ~t_l);
     }
     
-    return best_mask;
+    for (int h = 0; h < 16; h++) {
+        int fail = ((qs[2*h] != 0) && (qs[2*h+1] != 0));
+        res = fail ? 0 : res; // resub fails
+    }
+    return res;
 }
 
-// Main kernel for resubstitution feasibility checking
-__global__ void resub_feasibility_kernel(
-    const GPUResubProblem* problems,
-    GPUResubResult* results,
-    int num_problems
-) {
+// CUDA kernel: Thread I handles i=I%THREADS_PER_PROBLEM for problem I/THREADS_PER_PROBLEM
+// Now supports variable number of divisors and inputs per problem with no wasted space
+// problem_offsets has M+1 elements where problem_offsets[M] = total_elements
+__global__ void solve_resub_problems_kernel(uint64_t *flat_problems, uint32_t *solutions, 
+                                           int *problem_offsets, int *num_inputs, int M) {
     int global_tid = blockIdx.x * blockDim.x + threadIdx.x;
     int problem_id = global_tid / THREADS_PER_PROBLEM;
     int thread_in_problem = global_tid % THREADS_PER_PROBLEM;
     
-    if (problem_id >= num_problems) return;
+    if (problem_id >= M) return;
     
-    const GPUResubProblem& problem = problems[problem_id];
+    int N = num_inputs[problem_id];  // Get number of inputs for this problem
+    int size = 1 << N;
+    int nWords = size / word_width + (size % word_width != 0 ? 1 : 0);
+    int problem_offset = problem_offsets[problem_id];  // Get offset where this problem's data starts
     
-    // Shared memory for reduction
-    __shared__ uint32_t shared_masks[BLOCK_SIZE];
-    __shared__ int32_t shared_gains[BLOCK_SIZE];
+    // Compute divisor count from offsets (problem_offsets[M] contains total_elements)
+    int n_divs = (problem_offsets[problem_id + 1] - problem_offset) / nWords - 1;  // -1 for target
     
-    uint32_t local_mask = 0;
-    int32_t local_gain = -1;
+    uint32_t local_res = 0;
     
-    // Each thread checks different divisor combinations
-    int start_idx = thread_in_problem;
-    int stride = THREADS_PER_PROBLEM;
-    
-    // Simple strategy: each thread checks different starting points
-    for (int i = start_idx; i < problem.num_divisors && i < MAX_DIVISORS; i += stride) {
-        // Try single divisor first
-        if (check_implication(problem.target_on, problem.target_off,
-                             &problem.divisor_truths[i * problem.num_words],
-                             problem.num_words)) {
-            local_mask = (1U << i);
-            local_gain = 1;  // Simplified gain calculation
-            break;
-        }
-        
-        // Try pairs starting from i
-        for (int j = i + 1; j < problem.num_divisors && j < MAX_DIVISORS; j++) {
-            uint64_t combined[MAX_TRUTH_WORDS];
-            
-            // AND combination
-            for (int w = 0; w < problem.num_words; w++) {
-                combined[w] = problem.divisor_truths[i * problem.num_words + w] &
-                             problem.divisor_truths[j * problem.num_words + w];
-            }
-            
-            if (check_implication(problem.target_on, problem.target_off,
-                                combined, problem.num_words)) {
-                local_mask = (1U << i) | (1U << j);
-                local_gain = 1;
-                break;
-            }
-            
-            // OR combination
-            for (int w = 0; w < problem.num_words; w++) {
-                combined[w] = problem.divisor_truths[i * problem.num_words + w] |
-                             problem.divisor_truths[j * problem.num_words + w];
-            }
-            
-            if (check_implication(problem.target_on, problem.target_off,
-                                combined, problem.num_words)) {
-                local_mask = (1U << i) | (1U << j);
-                local_gain = 1;
-                break;
+    // Each thread handles multiple values of i using stride pattern
+    // Loop only up to actual number of divisors for this problem
+    for (int i = thread_in_problem; i < n_divs; i += THREADS_PER_PROBLEM) {
+        for (int j = i + 1; j < n_divs; j++) {
+            for (int k = j + 1; k < n_divs; k++) {
+                for (int l = k + 1; l < n_divs; l++) {
+                    uint32_t temp = solve_resub_overlap_cuda(i, j, k, l, flat_problems, nWords, problem_offset, n_divs);
+                    local_res = local_res ? local_res : temp;
+                }
             }
         }
-        
-        if (local_mask != 0) break;
     }
-    
-    // Store in shared memory
-    int shared_idx = threadIdx.x;
-    shared_masks[shared_idx] = local_mask;
-    shared_gains[shared_idx] = local_gain;
-    __syncthreads();
     
     // Reduction within threads working on same problem
+    __shared__ uint32_t shared_results[BLOCK_SIZE];
+    int shared_idx = threadIdx.x;
+    shared_results[shared_idx] = local_res;
+    __syncthreads();
+    
+    // First thread of each problem group performs reduction
     if (thread_in_problem == 0) {
-        uint32_t final_mask = 0;
-        int32_t final_gain = -1;
-        
-        for (int t = 0; t < THREADS_PER_PROBLEM && 
-             (threadIdx.x / THREADS_PER_PROBLEM) * THREADS_PER_PROBLEM + t < blockDim.x; t++) {
+        uint32_t final_res = 0;
+        for (int t = 0; t < THREADS_PER_PROBLEM; t++) {
             int idx = (threadIdx.x / THREADS_PER_PROBLEM) * THREADS_PER_PROBLEM + t;
-            if (shared_masks[idx] != 0 && 
-                (final_mask == 0 || __popc(shared_masks[idx]) < __popc(final_mask))) {
-                final_mask = shared_masks[idx];
-                final_gain = shared_gains[idx];
-            }
+            final_res = final_res ? final_res : shared_results[idx];
         }
-        
-        results[problem_id].window_id = problem.window_id;
-        results[problem_id].success = (final_mask != 0) ? 1 : 0;
-        results[problem_id].divisor_mask = final_mask;
-        results[problem_id].gain = final_gain;
+        solutions[problem_id] = final_res;
     }
 }
 
-// Extended kernel for more complex resubstitution
-__global__ void parallel_resub_kernel(
-    const GPUResubProblem* problems,
-    GPUResubResult* results,
-    int num_problems,
-    int max_divisor_size
-) {
-    int problem_id = blockIdx.x;
-    if (problem_id >= num_problems) return;
+// Host function to launch CUDA kernel - takes pre-flattened array with offsets
+// problem_offsets has M+1 elements where problem_offsets[M] = total_elements
+void solve_resub_problems_cuda(uint64_t *flat_problems, uint32_t *solutions, 
+                              int *problem_offsets, int *num_inputs, int M, int total_elements) {
+    // Allocate device memory
+    uint64_t *d_flat_problems;
+    uint32_t *d_solutions;
+    int *d_problem_offsets;
+    int *d_num_inputs;
     
-    const GPUResubProblem& problem = problems[problem_id];
-    int tid = threadIdx.x;
+    CHECK_CUDA_ERROR(cudaMalloc(&d_flat_problems, total_elements * sizeof(uint64_t)));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_solutions, M * sizeof(uint32_t)));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_problem_offsets, (M + 1) * sizeof(int)));  // M+1 elements
+    CHECK_CUDA_ERROR(cudaMalloc(&d_num_inputs, M * sizeof(int)));
     
-    // Use shared memory for divisor truth tables
-    extern __shared__ uint64_t shared_truths[];
+    // Copy data to device
+    CHECK_CUDA_ERROR(cudaMemcpy(d_flat_problems, flat_problems, total_elements * sizeof(uint64_t), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_problem_offsets, problem_offsets, (M + 1) * sizeof(int), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_num_inputs, num_inputs, M * sizeof(int), cudaMemcpyHostToDevice));
     
-    // Cooperatively load divisor truth tables into shared memory
-    int truths_per_thread = (problem.num_divisors * problem.num_words + blockDim.x - 1) / blockDim.x;
-    for (int i = 0; i < truths_per_thread; i++) {
-        int idx = tid * truths_per_thread + i;
-        if (idx < problem.num_divisors * problem.num_words) {
-            shared_truths[idx] = problem.divisor_truths[idx];
-        }
-    }
-    __syncthreads();
+    // Launch kernel - adjust for multiple threads per problem
+    int blockSize = BLOCK_SIZE;
+    int totalThreads = M * THREADS_PER_PROBLEM;
+    int numBlocks = (totalThreads + blockSize - 1) / blockSize;
     
-    // Each thread explores different combinations
-    uint32_t best_mask = find_best_divisors(
-        shared_truths,
-        problem.target_on,
-        problem.target_off,
-        problem.num_divisors,
-        problem.num_words,
-        max_divisor_size
-    );
-    
-    // Reduction to find best result
-    __shared__ uint32_t best_masks[256];
-    best_masks[tid] = best_mask;
-    __syncthreads();
-    
-    // Tree reduction
-    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            uint32_t mask1 = best_masks[tid];
-            uint32_t mask2 = best_masks[tid + stride];
-            
-            // Choose better mask (fewer divisors)
-            if (mask2 != 0 && (mask1 == 0 || __popc(mask2) < __popc(mask1))) {
-                best_masks[tid] = mask2;
-            }
-        }
-        __syncthreads();
-    }
-    
-    // Thread 0 writes the result
-    if (tid == 0) {
-        results[problem_id].window_id = problem.window_id;
-        results[problem_id].success = (best_masks[0] != 0) ? 1 : 0;
-        results[problem_id].divisor_mask = best_masks[0];
-        results[problem_id].gain = best_masks[0] ? __popc(best_masks[0]) : -1;
-    }
-}
-
-// GPUResubEngine implementation
-GPUResubEngine::GPUResubEngine(int max_batch_size) 
-    : max_batch_size(max_batch_size), d_problems(nullptr), d_results(nullptr) {
-    CUDA_CHECK(cudaStreamCreate(&stream));
-    allocate_device_memory(max_batch_size);
-}
-
-GPUResubEngine::~GPUResubEngine() {
-    free_device_memory();
-    cudaStreamDestroy(stream);
-}
-
-void GPUResubEngine::allocate_device_memory(int batch_size) {
-    if (d_problems != nullptr) {
-        free_device_memory();
-    }
-    
-    CUDA_CHECK(cudaMalloc(&d_problems, batch_size * sizeof(GPUResubProblem)));
-    CUDA_CHECK(cudaMalloc(&d_results, batch_size * sizeof(GPUResubResult)));
-}
-
-void GPUResubEngine::free_device_memory() {
-    if (d_problems != nullptr) {
-        cudaFree(d_problems);
-        d_problems = nullptr;
-    }
-    if (d_results != nullptr) {
-        cudaFree(d_results);
-        d_results = nullptr;
-    }
-}
-
-void GPUResubEngine::process_batch(
-    const GPUResubProblem* h_problems,
-    GPUResubResult* h_results,
-    int num_problems
-) {
-    if (num_problems > max_batch_size) {
-        // Process in chunks
-        int offset = 0;
-        while (offset < num_problems) {
-            int chunk_size = std::min(max_batch_size, num_problems - offset);
-            process_batch(h_problems + offset, h_results + offset, chunk_size);
-            offset += chunk_size;
-        }
-        return;
-    }
-    
-    // Copy problems to device
-    CUDA_CHECK(cudaMemcpyAsync(d_problems, h_problems, 
-                               num_problems * sizeof(GPUResubProblem),
-                               cudaMemcpyHostToDevice, stream));
-    
-    // Launch kernel
-    int total_threads = num_problems * THREADS_PER_PROBLEM;
-    int num_blocks = (total_threads + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    
-    resub_feasibility_kernel<<<num_blocks, BLOCK_SIZE, 0, stream>>>(
-        d_problems, d_results, num_problems
-    );
+    solve_resub_problems_kernel<<<numBlocks, blockSize>>>(d_flat_problems, d_solutions, 
+                                                          d_problem_offsets, d_num_inputs, M);
+    CHECK_CUDA_ERROR(cudaGetLastError());
+    CHECK_CUDA_ERROR(cudaDeviceSynchronize());
     
     // Copy results back
-    CUDA_CHECK(cudaMemcpyAsync(h_results, d_results,
-                               num_problems * sizeof(GPUResubResult),
-                               cudaMemcpyDeviceToHost, stream));
+    CHECK_CUDA_ERROR(cudaMemcpy(solutions, d_solutions, M * sizeof(uint32_t), cudaMemcpyDeviceToHost));
     
-    // Synchronize
-    CUDA_CHECK(cudaStreamSynchronize(stream));
+    // Cleanup
+    CHECK_CUDA_ERROR(cudaFree(d_flat_problems));
+    CHECK_CUDA_ERROR(cudaFree(d_solutions));
+    CHECK_CUDA_ERROR(cudaFree(d_problem_offsets));
+    CHECK_CUDA_ERROR(cudaFree(d_num_inputs));
+}
+
+// Convert solution mask to vector of divisor indices
+std::vector<int> mask_to_indices(uint32_t mask) {
+    std::vector<int> indices;
+    for (int i = 0; i < 32; i++) {
+        if (mask & (1U << i)) {
+            indices.push_back(i);
+        }
+    }
+    return indices;
 }
 
 } // namespace cuda
+} // namespace fresub
+
+namespace fresub {
+
+// CUDA-compatible feasibility check function with vector iterator interface  
+void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end) {
+    int M = std::distance(begin, end);  // Number of problems (windows)
+    if (M == 0) return;
+    
+    // Calculate total size needed and build offset array
+    std::vector<int> problem_offsets(M + 1);  // M+1 elements
+    std::vector<int> num_inputs(M);
+    int total_elements = 0;
+    
+    int idx = 0;
+    for (auto it = begin; it != end; ++it, ++idx) {
+        int N = it->inputs.size();
+        num_inputs[idx] = N;
+        int size = 1 << N;
+        int nWords = (size + 63) / 64;  // More standard rounding up
+        int n_truth_tables = it->truth_tables.size();  // divisors + target
+        
+        problem_offsets[idx] = total_elements;
+        total_elements += n_truth_tables * nWords;
+        
+    }
+    problem_offsets[M] = total_elements;  // Last element points to end
+    
+    // Allocate flattened array with exact size needed
+    std::vector<uint64_t> flat_problems(total_elements, 0);
+    
+    // Flatten all windows into the array
+    idx = 0;
+    for (auto it = begin; it != end; ++it, ++idx) {
+        int N = it->inputs.size();
+        int size = 1 << N;
+        int nWords = size / 64 + (size % 64 != 0 ? 1 : 0);
+        int problem_offset = problem_offsets[idx];
+        
+        // Copy all truth tables (divisors + target)
+        for (size_t t = 0; t < it->truth_tables.size(); t++) {
+            for (int w = 0; w < nWords; w++) {
+                if (w < (int)it->truth_tables[t].size()) {
+                    flat_problems[problem_offset + t * nWords + w] = it->truth_tables[t][w];
+                }
+            }
+        }
+    }
+    
+    // Allocate solutions array
+    std::vector<uint32_t> solutions(M);
+    
+    // Call CUDA kernel with new interface
+    cuda::solve_resub_problems_cuda(flat_problems.data(), solutions.data(), 
+                                    problem_offsets.data(), num_inputs.data(), 
+                                    M, total_elements);
+    
+    // Convert results back to feasible combinations for each window
+    idx = 0;
+    for (auto it = begin; it != end; ++it, ++idx) {
+        uint32_t mask = solutions[idx];
+        
+        if (mask != 0) {
+            // Convert mask to indices and store in window
+            std::vector<int> indices = cuda::mask_to_indices(mask);
+            
+            // Limit to valid divisor count for this window
+            std::vector<int> valid_indices;
+            int max_divisors = it->truth_tables.size() - 1;  // -1 for target
+            for (int div_idx : indices) {
+                if (div_idx < max_divisors) {
+                    valid_indices.push_back(div_idx);
+                }
+            }
+            if (!valid_indices.empty()) {
+                it->feasible_combinations.push_back(valid_indices);
+            }
+        }
+        
+        // If no CUDA solution found, leave feasible_combinations empty
+        // which matches the behavior when CPU finds no feasible solution
+    }
+}
+
 } // namespace fresub

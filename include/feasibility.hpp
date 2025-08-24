@@ -15,4 +15,7 @@ namespace fresub {
 
   void feasibility_check_cpu(std::vector<Window>::iterator it, std::vector<Window>::iterator end);
 
+  // CUDA feasibility check with vector iterator interface
+  void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
+
 } // namespace fresub

@@ -63,6 +63,7 @@ add_executable(fresub src/cpu/main.cpp)
 # Link libraries - includes come automatically from fresub_cpu's dependencies
 target_link_libraries(fresub
     fresub_cpu
+    fresub_cuda
     Threads::Threads
 )
 
