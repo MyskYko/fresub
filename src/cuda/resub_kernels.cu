@@ -147,6 +147,7 @@ __global__ void solve_resub_problems_kernel(uint64_t *flat_problems, uint32_t *s
     }
 }
 
+
 // Host function to launch CUDA kernel - takes pre-flattened array with offsets
 // problem_offsets has M+1 elements where problem_offsets[M] = total_elements
 void solve_resub_problems_cuda(uint64_t *flat_problems, uint32_t *solutions, 
@@ -203,7 +204,7 @@ std::vector<int> mask_to_indices(uint32_t mask) {
 
 namespace fresub {
 
-// CUDA-compatible feasibility check function with vector iterator interface  
+// CUDA-compatible feasibility check function with vector iterator interface (original version)
 void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end) {
     int M = std::distance(begin, end);  // Number of problems (windows)
     if (M == 0) return;
@@ -223,7 +224,6 @@ void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Win
         
         problem_offsets[idx] = total_elements;
         total_elements += n_truth_tables * nWords;
-        
     }
     problem_offsets[M] = total_elements;  // Last element points to end
     
@@ -251,7 +251,7 @@ void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Win
     // Allocate solutions array
     std::vector<uint32_t> solutions(M);
     
-    // Call CUDA kernel with new interface
+    // Call CUDA kernel with original interface (finds first feasible solution only)
     cuda::solve_resub_problems_cuda(flat_problems.data(), solutions.data(), 
                                     problem_offsets.data(), num_inputs.data(), 
                                     M, total_elements);
@@ -262,24 +262,10 @@ void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Win
         uint32_t mask = solutions[idx];
         
         if (mask != 0) {
-            // Convert mask to indices and store in window
+            // Convert mask to indices and store in window - assume indices are valid
             std::vector<int> indices = cuda::mask_to_indices(mask);
-            
-            // Limit to valid divisor count for this window
-            std::vector<int> valid_indices;
-            int max_divisors = it->truth_tables.size() - 1;  // -1 for target
-            for (int div_idx : indices) {
-                if (div_idx < max_divisors) {
-                    valid_indices.push_back(div_idx);
-                }
-            }
-            if (!valid_indices.empty()) {
-                it->feasible_combinations.push_back(valid_indices);
-            }
+            it->feasible_combinations.push_back(indices);
         }
-        
-        // If no CUDA solution found, leave feasible_combinations empty
-        // which matches the behavior when CPU finds no feasible solution
     }
 }
 

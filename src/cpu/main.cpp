@@ -3,7 +3,6 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-#include <random>
 
 #include <aig.hpp>
 
@@ -13,9 +12,10 @@
 #include "synthesis.hpp"
 #include "window.hpp"
 
-// Forward declare CUDA function to avoid requiring CUDA headers when not needed
+// Forward declare CUDA functions to avoid requiring CUDA headers when not needed
 namespace fresub {
   void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
+  void feasibility_check_cuda_all(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
 }
 
 using namespace fresub;
@@ -29,6 +29,7 @@ struct Config {
     bool show_stats = false;
     bool use_mockturtle = true;  // Default to mockturtle synthesis
     bool use_cuda = false;       // Default to CPU feasibility check
+    bool use_cuda_all = false;   // Use CUDA to find all combinations
 };
 
 
@@ -48,6 +49,8 @@ int main(int argc, char** argv) {
       config.use_mockturtle = true;
     } else if (strcmp(argv[i], "--cuda") == 0) {
       config.use_cuda = true;
+    } else if (strcmp(argv[i], "--cuda-all") == 0) {
+      config.use_cuda_all = true;
     } else if (argv[i][0] != '-') {
       if (config.input_file.empty()) {
 	config.input_file = argv[i];
@@ -64,7 +67,8 @@ int main(int argc, char** argv) {
     std::cerr << "  -s            Show statistics\n";
     std::cerr << "  --exopt       Use SAT-based synthesis (exopt)\n";
     std::cerr << "  --mockturtle  Use library-based synthesis (mockturtle, default)\n";
-    std::cerr << "  --cuda        Use CUDA for feasibility checking\n";
+    std::cerr << "  --cuda        Use CUDA for feasibility checking (first solution)\n";
+    std::cerr << "  --cuda-all    Use CUDA for feasibility checking (all solutions)\n";
     return 1;
   }
   
@@ -80,7 +84,13 @@ int main(int argc, char** argv) {
   }
   if (config.verbose) {
     std::cout << "Using " << (config.use_mockturtle ? "mockturtle library-based" : "exopt SAT-based") << " synthesis\n";
-    std::cout << "Using " << (config.use_cuda ? "CUDA" : "CPU") << " feasibility checking\n";
+    if (config.use_cuda_all) {
+      std::cout << "Using CUDA feasibility checking (all combinations)\n";
+    } else if (config.use_cuda) {
+      std::cout << "Using CUDA feasibility checking (first combination)\n";
+    } else {
+      std::cout << "Using CPU feasibility checking\n";
+    }
   }
 
   // Start measurement
@@ -113,7 +123,9 @@ int main(int argc, char** argv) {
   }
 
   // Feasibility check
-  if (config.use_cuda) {
+  if (config.use_cuda_all) {
+    feasibility_check_cuda_all(windows.begin(), windows.end());
+  } else if (config.use_cuda) {
     feasibility_check_cuda(windows.begin(), windows.end());
   } else {
     feasibility_check_cpu(windows.begin(), windows.end());
@@ -121,7 +133,6 @@ int main(int argc, char** argv) {
   
   // Synthesis
   std::vector<Result> results;
-  std::mt19937 rng;
   for (auto& window : windows) {
     if (config.verbose) {
       std::cout << "Processing window with target " << window.target_node
@@ -132,9 +143,20 @@ int main(int argc, char** argv) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
-    auto selected_divisor_indices = window.feasible_combinations[rng() % window.feasible_combinations.size()]; // Use a random feasible combination for now
     if (config.verbose) {
-      std::cout << "  ✓ Found feasible resubstitution using divisor indices: {";
+      std::cout << "  ✓ Found " << window.feasible_combinations.size() << " feasible resubstitution(s):\n";
+      for (size_t combo_idx = 0; combo_idx < window.feasible_combinations.size(); combo_idx++) {
+        std::cout << "    [" << combo_idx << "]: {";
+        for (size_t i = 0; i < window.feasible_combinations[combo_idx].size(); i++) {
+          if (i > 0) std::cout << ", ";
+          std::cout << window.feasible_combinations[combo_idx][i];
+        }
+        std::cout << "}\n";
+      }
+    }
+    auto selected_divisor_indices = window.feasible_combinations[0]; // use the first one for now
+    if (config.verbose) {
+      std::cout << "  Using first combination: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
 	if (i > 0) std::cout << ", ";
 	std::cout << selected_divisor_indices[i];

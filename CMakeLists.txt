@@ -38,6 +38,7 @@ set(CPU_LIB_SOURCES
 
 set(CUDA_SOURCES
     src/cuda/resub_kernels.cu
+    src/cuda/resub_kernels_all.cu
 )
 
 # Create library for CPU components (without main.cpp)
