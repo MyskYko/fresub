@@ -1,3 +1,4 @@
+ - resub with smaller number of divisors (0-3 input resub)
  - batch processing (number of windows to issue at once), but we need to think about how to iterate
  - try all feasible sets of divisors to choose the best one
  - sort insertion order, probably based on gain
