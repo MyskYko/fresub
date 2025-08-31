@@ -30,6 +30,7 @@ struct Config {
     bool use_mockturtle = true;  // Default to mockturtle synthesis
     bool use_cuda = false;       // Default to CPU feasibility check
     bool use_cuda_all = false;   // Use CUDA to find all combinations
+    bool feas_all = false;       // CPU feasibility: if true ALL, else MIN-SIZE
 };
 
 
@@ -51,6 +52,8 @@ int main(int argc, char** argv) {
       config.use_cuda = true;
     } else if (strcmp(argv[i], "--cuda-all") == 0) {
       config.use_cuda_all = true;
+    } else if (strcmp(argv[i], "--feas-all") == 0) {
+      config.feas_all = true;
     } else if (argv[i][0] != '-') {
       if (config.input_file.empty()) {
 	config.input_file = argv[i];
@@ -69,6 +72,7 @@ int main(int argc, char** argv) {
     std::cerr << "  --mockturtle  Use library-based synthesis (mockturtle, default)\n";
     std::cerr << "  --cuda        Use CUDA for feasibility checking (first solution)\n";
     std::cerr << "  --cuda-all    Use CUDA for feasibility checking (all solutions)\n";
+    std::cerr << "  --feas-all    CPU feasibility: ALL mode (default is MIN-SIZE)\n";
     return 1;
   }
   
@@ -88,8 +92,10 @@ int main(int argc, char** argv) {
       std::cout << "Using CUDA feasibility checking (all combinations)\n";
     } else if (config.use_cuda) {
       std::cout << "Using CUDA feasibility checking (first combination)\n";
+    } else if (config.feas_all) {
+      std::cout << "Using CPU feasibility (ALL mode)\n";
     } else {
-      std::cout << "Using CPU feasibility checking\n";
+      std::cout << "Using CPU feasibility (MIN-SIZE mode)\n";
     }
   }
 
@@ -107,15 +113,7 @@ int main(int argc, char** argv) {
     std::cout << "Extracted " << windows.size() << " windows\n";
   }
 
-  // Exclude windows with less than 4 divisors for now
-  std::vector<Window> windows_old = std::move(windows);
-  windows.clear();
-  for (auto& window : windows_old) {
-    if (window.divisors.size() < 4) {
-      continue;
-    }
-    windows.push_back(std::move(window));
-  }
+  // Previously: excluded windows with <4 divisors. Now process all windows.
   
   // Compute truth tables
   for (auto& window : windows) {
@@ -127,8 +125,10 @@ int main(int argc, char** argv) {
     feasibility_check_cuda_all(windows.begin(), windows.end());
   } else if (config.use_cuda) {
     feasibility_check_cuda(windows.begin(), windows.end());
+  } else if (config.feas_all) {
+    feasibility_check_cpu_all(windows.begin(), windows.end());
   } else {
-    feasibility_check_cpu(windows.begin(), windows.end());
+    feasibility_check_cpu_min(windows.begin(), windows.end());
   }
   
   // Synthesis
@@ -237,4 +237,3 @@ int main(int argc, char** argv) {
   return 0;
   
 }
-

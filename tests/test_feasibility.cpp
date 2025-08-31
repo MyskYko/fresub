@@ -129,6 +129,104 @@ void test_synthetic_truth_tables() {
     std::cout << "\n  ✓ Synthetic truth table feasibility tests completed\n";
 }
 
+void test_small_k_helpers_and_enumerators() {
+    std::cout << "\n=== TESTING SMALL-K FEASIBILITY HELPERS ===\n";
+
+    // Base patterns for 4 inputs in 1 word (16 patterns),
+    // duplicate across 64 bits to avoid needing masks
+    const int num_inputs = 4;
+    const uint64_t A = 0xaaaaaaaaaaaaaaaaull; // bit 0 pattern duplicated
+    const uint64_t B = 0xccccccccccccccccull; // bit 1 pattern duplicated
+    const uint64_t C = 0xf0f0f0f0f0f0f0f0ull; // bit 2 pattern duplicated
+    const uint64_t D = 0xff00ff00ff00ff00ull; // bit 3 pattern duplicated
+
+    // k=0: constant target
+    {
+        std::vector<std::vector<uint64_t>> tt_const0 = { {0x0000000000000000ull} };
+        std::vector<std::vector<uint64_t>> tt_const1 = { {0xffffffffffffffffull} };
+        std::vector<std::vector<uint64_t>> tt_nonconst = { {A} };
+        ASSERT(solve_resub_overlap_multiword_0(tt_const0, num_inputs) == true);
+        ASSERT(solve_resub_overlap_multiword_0(tt_const1, num_inputs) == true);
+        ASSERT(solve_resub_overlap_multiword_0(tt_nonconst, num_inputs) == false);
+    }
+
+    // k=1: one divisor
+    {
+        // Divisors: [A], target=A -> feasible
+        std::vector<std::vector<uint64_t>> tts = { {A}, {A} };
+        ASSERT(solve_resub_overlap_multiword_1(0, tts, num_inputs) == true);
+        // Target=B while divisor=A -> infeasible
+        tts.back()[0] = B;
+        ASSERT(solve_resub_overlap_multiword_1(0, tts, num_inputs) == false);
+    }
+
+    // k=2: two divisors
+    {
+        // Divisors: [A, B], target=A&B -> feasible
+        std::vector<std::vector<uint64_t>> tts = { {A}, {B}, {A & B} };
+        ASSERT(solve_resub_overlap_multiword_2(0, 1, tts, num_inputs) == true);
+        // Target=C -> infeasible with divisors A,B
+        tts.back()[0] = C;
+        ASSERT(solve_resub_overlap_multiword_2(0, 1, tts, num_inputs) == false);
+    }
+
+    // k=3: three divisors
+    {
+        // Divisors: [A, B, C], target=(A&B)|C -> feasible
+        std::vector<std::vector<uint64_t>> tts = { {A}, {B}, {C}, {(A & B) | C} };
+        ASSERT(solve_resub_overlap_multiword_3(0, 1, 2, tts, num_inputs) == true);
+        // Target=D -> infeasible with divisors A,B,C
+        tts.back()[0] = D;
+        ASSERT(solve_resub_overlap_multiword_3(0, 1, 2, tts, num_inputs) == false);
+    }
+
+    std::cout << "\n=== TESTING SMALL-K ENUMERATORS ===\n";
+    // Enumerators k=0..3
+    {
+        // k=0: constant
+        std::vector<std::vector<uint64_t>> tts0 = { {0xffffffffffffffffull} };
+        auto c0 = find_feasible_0resub(tts0, num_inputs);
+        std::cout << "c0 size=" << c0.size() << "\n";
+        ASSERT(c0.size() == 1);
+        ASSERT(c0[0].empty());
+
+        std::vector<std::vector<uint64_t>> tts0b = { {A} };
+        auto c0b = find_feasible_0resub(tts0b, num_inputs);
+        ASSERT(c0b.empty());
+
+        // k=1: target=A
+        std::vector<std::vector<uint64_t>> tts1 = { {A}, {A} };
+        auto c1 = find_feasible_1resub(tts1, num_inputs);
+        ASSERT(c1.size() == 1 && c1[0].size() == 1 && c1[0][0] == 0);
+
+        // k=2: target = A ^ B
+        std::vector<std::vector<uint64_t>> tts2 = { {A}, {B}, {C}, {A ^ B} };
+        auto c2 = find_feasible_2resub(tts2, num_inputs);
+        // Only pair {0,1} should be feasible
+        ASSERT(c2.size() >= 1);
+        bool has01 = false; bool others = false;
+        for (auto& v : c2) {
+            if (v.size() == 2 && v[0] == 0 && v[1] == 1) has01 = true; else others = true;
+        }
+        ASSERT(has01 == true);
+        ASSERT(others == false);
+
+        // k=3: target = (A&B)|C with divisors [A,B,C,D]
+        std::vector<std::vector<uint64_t>> tts3 = { {A}, {B}, {C}, {D}, {(A & B) | C} };
+        auto c3 = find_feasible_3resub(tts3, num_inputs);
+        // Only {0,1,2} should be feasible
+        ASSERT(c3.size() >= 1);
+        bool has012 = false; bool others3 = false;
+        for (auto& v : c3) {
+            if (v.size() == 3 && v[0] == 0 && v[1] == 1 && v[2] == 2) has012 = true; else others3 = true;
+        }
+        ASSERT(has012 == true);
+        ASSERT(others3 == false);
+    }
+
+    std::cout << "✓ Small-k feasibility helpers and enumerators tests completed\n";
+}
+
 void test_feasibility_with_aigman() {
     std::cout << "\n=== TESTING FEASIBILITY WITH AIGMAN ===\n";
     
@@ -246,6 +344,7 @@ int main() {
     std::cout << "========================================\n\n";
     
     test_synthetic_truth_tables();
+    test_small_k_helpers_and_enumerators();
     test_feasibility_with_aigman(); 
     test_find_feasible_4resub();
     
