@@ -5,13 +5,13 @@ A prototype circuit optimization tool that performs functional resubstitution on
 ## Features
 
 - **Window-based resubstitution**: Extracts optimization windows using cut enumeration
-- **4-input feasibility checking**: Finds feasible 4-divisor combinations for circuit resubstitution
+- **Feasibility checking**: Finds feasible divisor combinations for circuit resubstitution
 - **Multiple synthesis backends**: 
   - SAT-based synthesis using exopt
   - Library-based synthesis using mockturtle (default)
 - **GPU acceleration**: CUDA implementations for parallel feasibility checking
 - **Flexible feasibility options**:
-  - CPU: Finds all feasible combinations
+  - CPU: MIN-SIZE mode (default) or ALL combinations
   - CUDA (first): GPU implementation finding first feasible solution
   - CUDA (all): GPU implementation finding all feasible combinations
 
@@ -54,6 +54,7 @@ make -j$(nproc)
 - `--mockturtle`: Use library-based synthesis (mockturtle, default)
 - `--cuda`: Use GPU acceleration (finds first feasible solution per window)
 - `--cuda-all`: Use GPU acceleration (finds all feasible solutions per window)
+- `--feas-all`: CPU feasibility ALL mode (default is MIN-SIZE)
 
 ### Examples
 
@@ -74,7 +75,7 @@ The prototype implements a basic window-based resubstitution algorithm:
 
 1. **Window Extraction**: Uses cut enumeration to identify optimization windows
 2. **Truth Table Computation**: Computes truth tables for window nodes and divisors  
-3. **Feasibility Checking**: Finds 4-input combinations that can implement the target function
+3. **Feasibility Checking**: Finds combinations that can implement the target function
 4. **Logic Synthesis**: Synthesizes replacement circuits using chosen combinations
 5. **Circuit Insertion**: Applies optimizations while avoiding structural conflicts
 
@@ -82,7 +83,7 @@ The prototype implements a basic window-based resubstitution algorithm:
 
 ### Feasibility Checking Variants
 
-- **CPU Implementation**: Sequential search finding all feasible 4-divisor combinations
+- **CPU Implementation**: Sequential search supporting MIN-SIZE or ALL enumeration
 - **CUDA (first)**: Parallel GPU kernel optimized for finding first feasible solution
 - **CUDA (all)**: GPU implementation using 4D indexing to find all feasible combinations
 
