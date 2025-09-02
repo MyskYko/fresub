@@ -3,9 +3,16 @@
 #include <algorithm>
 #include <vector>
 #include <cstdint>
+#include <cassert>
 
 // Need to include Window definition - must match the real struct layout
 namespace fresub {
+struct aigman; // forward declaration for pointer use
+struct FeasibleSet {
+    std::vector<int> divisor_indices;
+    std::vector<int> divisor_nodes;
+    std::vector<aigman*> synths;
+};
 struct Window {
     int target_node;
     std::vector<int> inputs;     // Window inputs (cut leaves)
@@ -14,7 +21,7 @@ struct Window {
     int cut_id;                  // ID of the cut that generated this window
     int mffc_size;
     std::vector<std::vector<uint64_t>> truth_tables;
-    std::vector<std::vector<int>> feasible_combinations;
+    std::vector<FeasibleSet> feasible_sets;
 };
 }
 
@@ -77,7 +84,7 @@ __global__ void solve_resub_problems_kernel_all(uint64_t *flat_problems, char *f
     }
 }
 
-// Host function to launch new CUDA kernel that finds all feasible combinations
+// Host function to launch new CUDA kernel that finds all feasible sets
 void solve_resub_problems_cuda_all(uint64_t *flat_problems, char *feasibility_results,
                                    int *problem_offsets, int *combination_offsets, 
                                    int *num_inputs, int M, int total_elements, int total_combinations) {
@@ -127,7 +134,7 @@ void solve_resub_problems_cuda_all(uint64_t *flat_problems, char *feasibility_re
 
 namespace fresub {
 
-// CUDA-compatible feasibility check function that finds ALL feasible combinations
+// CUDA-compatible feasibility check function that finds ALL feasible sets
 void feasibility_check_cuda_all(std::vector<Window>::iterator begin, std::vector<Window>::iterator end) {
     int M = std::distance(begin, end);  // Number of problems (windows)
     if (M == 0) return;
@@ -179,18 +186,18 @@ void feasibility_check_cuda_all(std::vector<Window>::iterator begin, std::vector
         }
     }
     
-    // Call CUDA kernel to find all feasible combinations
+    // Call CUDA kernel to find all feasible sets
     cuda::solve_resub_problems_cuda_all(flat_problems.data(), feasibility_results.data(),
                                         problem_offsets.data(), combination_offsets.data(),
                                         num_inputs.data(), M, total_elements, total_combinations);
     
-    // Convert results back to feasible combinations for each window
+    // Convert results back to feasible sets for each window
     idx = 0;
     for (auto it = begin; it != end; ++it, ++idx) {
         int n_divs = it->truth_tables.size() - 1;  // -1 for target
         int combination_base = combination_offsets[idx];
         
-        it->feasible_combinations.clear();
+        assert(it->feasible_sets.empty());
         
         // Check all valid combinations (i < j < k < l)
         for (int i = 0; i < n_divs; i++) {
@@ -201,7 +208,9 @@ void feasibility_check_cuda_all(std::vector<Window>::iterator begin, std::vector
                         int global_idx = combination_base + combination_idx;
                         
                         if (feasibility_results[global_idx]) {
-                            it->feasible_combinations.push_back({i, j, k, l});
+                            FeasibleSet fs;
+                            fs.divisor_indices = {i, j, k, l};
+                            it->feasible_sets.push_back(std::move(fs));
                         }
                     }
                 }

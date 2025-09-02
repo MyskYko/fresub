@@ -139,22 +139,22 @@ int main(int argc, char** argv) {
 		<< " (" << window.inputs.size() << " inputs, "
 		<< window.divisors.size() << " divisors)\n";
     }    
-    if (window.feasible_combinations.empty()) {
+    if (window.feasible_sets.empty()) {
       if (config.verbose) std::cout << "  No feasible resubstitution found\n";
       continue;
     }
     if (config.verbose) {
-      std::cout << "  ✓ Found " << window.feasible_combinations.size() << " feasible resubstitution(s):\n";
-      for (size_t combo_idx = 0; combo_idx < window.feasible_combinations.size(); combo_idx++) {
+      std::cout << "  ✓ Found " << window.feasible_sets.size() << " feasible resubstitution(s):\n";
+      for (size_t combo_idx = 0; combo_idx < window.feasible_sets.size(); combo_idx++) {
         std::cout << "    [" << combo_idx << "]: {";
-        for (size_t i = 0; i < window.feasible_combinations[combo_idx].size(); i++) {
+        for (size_t i = 0; i < window.feasible_sets[combo_idx].divisor_indices.size(); i++) {
           if (i > 0) std::cout << ", ";
-          std::cout << window.feasible_combinations[combo_idx][i];
+          std::cout << window.feasible_sets[combo_idx].divisor_indices[i];
         }
         std::cout << "}\n";
       }
     }
-    auto selected_divisor_indices = window.feasible_combinations[0]; // use the first one for now
+    auto selected_divisor_indices = window.feasible_sets[0].divisor_indices; // use the first one for now
     if (config.verbose) {
       std::cout << "  Using first combination: {";
       for (size_t i = 0; i < selected_divisor_indices.size(); i++) {

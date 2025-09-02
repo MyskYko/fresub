@@ -7,6 +7,12 @@
 // Need to include Window definition - must match the real struct layout
 // This is a bit hacky but avoids pulling in the full AIG dependencies
 namespace fresub {
+struct aigman; // forward declaration for pointer use
+struct FeasibleSet {
+    std::vector<int> divisor_indices;
+    std::vector<int> divisor_nodes;
+    std::vector<aigman*> synths;
+};
 struct Window {
     int target_node;
     std::vector<int> inputs;     // Window inputs (cut leaves)
@@ -15,7 +21,7 @@ struct Window {
     int cut_id;                  // ID of the cut that generated this window
     int mffc_size;
     std::vector<std::vector<uint64_t>> truth_tables;
-    std::vector<std::vector<int>> feasible_combinations;
+    std::vector<FeasibleSet> feasible_sets;
 };
 }
 
@@ -256,7 +262,7 @@ void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Win
                                     problem_offsets.data(), num_inputs.data(), 
                                     M, total_elements);
     
-    // Convert results back to feasible combinations for each window
+    // Convert results back to feasible sets for each window
     idx = 0;
     for (auto it = begin; it != end; ++it, ++idx) {
         uint32_t mask = solutions[idx];
@@ -264,7 +270,10 @@ void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Win
         if (mask != 0) {
             // Convert mask to indices and store in window - assume indices are valid
             std::vector<int> indices = cuda::mask_to_indices(mask);
-            it->feasible_combinations.push_back(indices);
+            // Populate feasible_sets with divisor indices only
+            FeasibleSet fs;
+            fs.divisor_indices = std::move(indices);
+            it->feasible_sets.push_back(std::move(fs));
         }
     }
 }

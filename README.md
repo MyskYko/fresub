@@ -13,7 +13,7 @@ A prototype circuit optimization tool that performs functional resubstitution on
 - **Flexible feasibility options**:
   - CPU: MIN-SIZE mode (default) or ALL combinations
   - CUDA (first): GPU implementation finding first feasible solution
-  - CUDA (all): GPU implementation finding all feasible combinations
+  - CUDA (all): GPU implementation finding all feasible sets
 
 ## Building
 
@@ -62,7 +62,7 @@ make -j$(nproc)
 # Basic optimization with verbose output
 ./fresub -v circuit.aig optimized.aig
 
-# Use GPU acceleration with all feasible combinations
+# Use GPU acceleration with all feasible sets
 ./fresub --cuda-all -v circuit.aig optimized.aig
 
 # Use SAT-based synthesis with statistics
@@ -85,7 +85,7 @@ The prototype implements a basic window-based resubstitution algorithm:
 
 - **CPU Implementation**: Sequential search supporting MIN-SIZE or ALL enumeration
 - **CUDA (first)**: Parallel GPU kernel optimized for finding first feasible solution
-- **CUDA (all)**: GPU implementation using 4D indexing to find all feasible combinations
+- **CUDA (all)**: GPU implementation using 4D indexing to find all feasible sets
 
 ### Synthesis Backends
 

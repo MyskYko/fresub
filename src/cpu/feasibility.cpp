@@ -1,6 +1,7 @@
 #include "feasibility.hpp"
 
 #include <iostream>
+#include <cassert>
 
 namespace fresub {
 
@@ -178,81 +179,72 @@ namespace fresub {
     return r;
   }
 
-  // Find all feasible 4-input resubstitution combinations
-  std::vector<std::vector<int>> find_feasible_4resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs) {
-    std::vector<std::vector<int>> feasible_combinations;
+  // Find all feasible 4-input resubstitution combinations (populate FeasibleSet list)
+  void find_feasible_4resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets) {
     if (truth_tables.size() < 5) {
-      return feasible_combinations; // Need at least 4 divisors
+      return; // Need at least 4 divisors
     }
-    int n_divisors = truth_tables.size() - 1;
-    // Enumerate all combinations of 4 divisors and collect all feasible ones
+    int n_divisors = static_cast<int>(truth_tables.size()) - 1;
     for (int i = 0; i < n_divisors; i++) {
       for (int j = i + 1; j < n_divisors; j++) {
-	for (int k = j + 1; k < n_divisors; k++) {
-	  for (int l = k + 1; l < n_divisors; l++) {
-	    bool is_feasible = solve_resub_overlap_multiword(i, j, k, l, truth_tables, num_inputs);
-	    if (is_feasible) {
-	      feasible_combinations.push_back({static_cast<int>(i), static_cast<int>(j), static_cast<int>(k), static_cast<int>(l)});
-	    }
-	  }
-	}
+        for (int k = j + 1; k < n_divisors; k++) {
+          for (int l = k + 1; l < n_divisors; l++) {
+            if (solve_resub_overlap_multiword(i, j, k, l, truth_tables, num_inputs)) {
+              FeasibleSet fs;
+              fs.divisor_indices = {i, j, k, l};
+              out_sets.push_back(std::move(fs));
+            }
+          }
+        }
       }
     }
-    return feasible_combinations;
   }
 
   // --- Skeletons for k=0..3 enumerators (to be implemented) ---
-  std::vector<std::vector<int>> find_feasible_0resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs) {
-    std::vector<std::vector<int>> combos;
+  void find_feasible_0resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets) {
     if (solve_resub_overlap_multiword_0(truth_tables, num_inputs)) {
-      combos.push_back({}); // empty selection represents constant solution
+      FeasibleSet fs;
+      fs.divisor_indices = {};
+      out_sets.push_back(std::move(fs));
     }
-    return combos;
   }
 
-  std::vector<std::vector<int>> find_feasible_1resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs) {
-    std::vector<std::vector<int>> combos;
+  void find_feasible_1resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets) {
     int n_divisors = static_cast<int>(truth_tables.size()) - 1;
     for (int i = 0; i < n_divisors; i++) {
       if (solve_resub_overlap_multiword_1(i, truth_tables, num_inputs)) {
-        combos.push_back({i});
+        FeasibleSet fs;
+        fs.divisor_indices = {i};
+        out_sets.push_back(std::move(fs));
       }
     }
-    return combos;
   }
 
-  std::vector<std::vector<int>> find_feasible_2resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs) {
-    std::vector<std::vector<int>> combos;
+  void find_feasible_2resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets) {
     int n_divisors = static_cast<int>(truth_tables.size()) - 1;
     for (int i = 0; i < n_divisors; i++) {
       for (int j = i + 1; j < n_divisors; j++) {
         if (solve_resub_overlap_multiword_2(i, j, truth_tables, num_inputs)) {
-          combos.push_back({i, j});
+          FeasibleSet fs;
+          fs.divisor_indices = {i, j};
+          out_sets.push_back(std::move(fs));
         }
       }
     }
-    return combos;
   }
 
-  std::vector<std::vector<int>> find_feasible_3resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs) {
-    std::vector<std::vector<int>> combos;
+  void find_feasible_3resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets) {
     int n_divisors = static_cast<int>(truth_tables.size()) - 1;
     for (int i = 0; i < n_divisors; i++) {
       for (int j = i + 1; j < n_divisors; j++) {
         for (int k = j + 1; k < n_divisors; k++) {
           if (solve_resub_overlap_multiword_3(i, j, k, truth_tables, num_inputs)) {
-            combos.push_back({i, j, k});
+            FeasibleSet fs;
+            fs.divisor_indices = {i, j, k};
+            out_sets.push_back(std::move(fs));
           }
         }
       }
-    }
-    return combos;
-  }
-
-  void feasibility_check_cpu(std::vector<Window>::iterator it, std::vector<Window>::iterator end) {
-    while(it != end) {
-      it->feasible_combinations = find_feasible_4resub(it->truth_tables, it->inputs.size());
-      it++;
     }
   }
 
@@ -263,13 +255,12 @@ namespace fresub {
       int num_inputs = static_cast<int>(it->inputs.size());
       int n_div = static_cast<int>(tts.size()) - 1;
       int k = std::min(4, n_div);
-      std::vector<std::vector<int>> comb;
-      if (k == 0)        comb = find_feasible_0resub(tts, num_inputs);
-      else if (k == 1)   comb = find_feasible_1resub(tts, num_inputs);
-      else if (k == 2)   comb = find_feasible_2resub(tts, num_inputs);
-      else if (k == 3)   comb = find_feasible_3resub(tts, num_inputs);
-      else /* k == 4 */  comb = find_feasible_4resub(tts, num_inputs);
-      it->feasible_combinations = std::move(comb);
+      assert(it->feasible_sets.empty());
+      if (k == 0)        find_feasible_0resub(tts, num_inputs, it->feasible_sets);
+      else if (k == 1)   find_feasible_1resub(tts, num_inputs, it->feasible_sets);
+      else if (k == 2)   find_feasible_2resub(tts, num_inputs, it->feasible_sets);
+      else if (k == 3)   find_feasible_3resub(tts, num_inputs, it->feasible_sets);
+      else /* k == 4 */  find_feasible_4resub(tts, num_inputs, it->feasible_sets);
       ++it;
     }
   }
@@ -279,14 +270,14 @@ namespace fresub {
       const auto& tts = it->truth_tables;
       int num_inputs = static_cast<int>(it->inputs.size());
       int n_div = static_cast<int>(tts.size()) - 1;
+      assert(it->feasible_sets.empty());
+      // Try increasing k until first non-empty
+      find_feasible_0resub(tts, num_inputs, it->feasible_sets);
+      if (it->feasible_sets.empty() && n_div >= 1) find_feasible_1resub(tts, num_inputs, it->feasible_sets);
+      if (it->feasible_sets.empty() && n_div >= 2) find_feasible_2resub(tts, num_inputs, it->feasible_sets);
+      if (it->feasible_sets.empty() && n_div >= 3) find_feasible_3resub(tts, num_inputs, it->feasible_sets);
+      if (it->feasible_sets.empty() && n_div >= 4) find_feasible_4resub(tts, num_inputs, it->feasible_sets);
 
-      auto comb = find_feasible_0resub(tts, num_inputs);
-      if (comb.empty() && n_div >= 1) comb = find_feasible_1resub(tts, num_inputs);
-      if (comb.empty() && n_div >= 2) comb = find_feasible_2resub(tts, num_inputs);
-      if (comb.empty() && n_div >= 3) comb = find_feasible_3resub(tts, num_inputs);
-      if (comb.empty() && n_div >= 4) comb = find_feasible_4resub(tts, num_inputs);
-
-      it->feasible_combinations = std::move(comb);
       ++it;
     }
   }

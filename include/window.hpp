@@ -10,6 +10,12 @@
 
 namespace fresub {
 
+  struct FeasibleSet {
+    std::vector<int> divisor_indices; // indices into window.divisors
+    std::vector<int> divisor_nodes;   // resolved node IDs for convenience
+    std::vector<aigman*> synths;      // synthesized subcircuits for this set
+  };
+
   struct Window {
     int target_node;
     std::vector<int> inputs;     // Window inputs (cut leaves)
@@ -18,7 +24,7 @@ namespace fresub {
     int cut_id;                  // ID of the cut that generated this window
     int mffc_size;
     std::vector<std::vector<uint64_t>> truth_tables;
-    std::vector<std::vector<int>> feasible_combinations;
+    std::vector<FeasibleSet> feasible_sets; // optional: enriched storage per feasible set
   };
 
   // Window extraction using exopt's cut enumeration

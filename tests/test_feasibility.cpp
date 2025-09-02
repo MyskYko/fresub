@@ -185,27 +185,32 @@ void test_small_k_helpers_and_enumerators() {
     {
         // k=0: constant
         std::vector<std::vector<uint64_t>> tts0 = { {0xffffffffffffffffull} };
-        auto c0 = find_feasible_0resub(tts0, num_inputs);
+        std::vector<FeasibleSet> c0;
+        find_feasible_0resub(tts0, num_inputs, c0);
         std::cout << "c0 size=" << c0.size() << "\n";
         ASSERT(c0.size() == 1);
-        ASSERT(c0[0].empty());
+        ASSERT(c0[0].divisor_indices.empty());
 
         std::vector<std::vector<uint64_t>> tts0b = { {A} };
-        auto c0b = find_feasible_0resub(tts0b, num_inputs);
+        std::vector<FeasibleSet> c0b;
+        find_feasible_0resub(tts0b, num_inputs, c0b);
         ASSERT(c0b.empty());
 
         // k=1: target=A
         std::vector<std::vector<uint64_t>> tts1 = { {A}, {A} };
-        auto c1 = find_feasible_1resub(tts1, num_inputs);
-        ASSERT(c1.size() == 1 && c1[0].size() == 1 && c1[0][0] == 0);
+        std::vector<FeasibleSet> c1;
+        find_feasible_1resub(tts1, num_inputs, c1);
+        ASSERT(c1.size() == 1 && c1[0].divisor_indices.size() == 1 && c1[0].divisor_indices[0] == 0);
 
         // k=2: target = A ^ B
         std::vector<std::vector<uint64_t>> tts2 = { {A}, {B}, {C}, {A ^ B} };
-        auto c2 = find_feasible_2resub(tts2, num_inputs);
+        std::vector<FeasibleSet> c2;
+        find_feasible_2resub(tts2, num_inputs, c2);
         // Only pair {0,1} should be feasible
         ASSERT(c2.size() >= 1);
         bool has01 = false; bool others = false;
-        for (auto& v : c2) {
+        for (auto& fs : c2) {
+            const auto& v = fs.divisor_indices;
             if (v.size() == 2 && v[0] == 0 && v[1] == 1) has01 = true; else others = true;
         }
         ASSERT(has01 == true);
@@ -213,11 +218,13 @@ void test_small_k_helpers_and_enumerators() {
 
         // k=3: target = (A&B)|C with divisors [A,B,C,D]
         std::vector<std::vector<uint64_t>> tts3 = { {A}, {B}, {C}, {D}, {(A & B) | C} };
-        auto c3 = find_feasible_3resub(tts3, num_inputs);
+        std::vector<FeasibleSet> c3;
+        find_feasible_3resub(tts3, num_inputs, c3);
         // Only {0,1,2} should be feasible
         ASSERT(c3.size() >= 1);
         bool has012 = false; bool others3 = false;
-        for (auto& v : c3) {
+        for (auto& fs : c3) {
+            const auto& v = fs.divisor_indices;
             if (v.size() == 3 && v[0] == 0 && v[1] == 1 && v[2] == 2) has012 = true; else others3 = true;
         }
         ASSERT(has012 == true);
@@ -322,11 +329,12 @@ void test_find_feasible_4resub() {
     // Target is last element
     truth_tables[6][0] = truth_tables[4][0] | truth_tables[5][0]; // (a & b) | (c & d)
     
-    auto feasible_combinations = find_feasible_4resub(truth_tables, num_inputs);
+    std::vector<FeasibleSet> fs4;
+    find_feasible_4resub(truth_tables, num_inputs, fs4);
     
-    std::cout << "Found " << feasible_combinations.size() << " feasible 4-input combinations\n";
-    for (size_t i = 0; i < feasible_combinations.size() && i < 5; i++) {
-        const auto& combo = feasible_combinations[i];
+    std::cout << "Found " << fs4.size() << " feasible 4-input combinations\n";
+    for (size_t i = 0; i < fs4.size() && i < 5; i++) {
+        const auto& combo = fs4[i].divisor_indices;
         if (combo.size() == 4) {
             std::cout << "  Combination " << i << ": [" 
                       << combo[0] << ", " << combo[1] << ", " 
@@ -334,7 +342,7 @@ void test_find_feasible_4resub() {
         }
     }
     
-    ASSERT(feasible_combinations.size() > 0); // Should find some combinations
+    ASSERT(fs4.size() > 0); // Should find some combinations
     std::cout << "✓ find_feasible_4resub working\n";
 }
 

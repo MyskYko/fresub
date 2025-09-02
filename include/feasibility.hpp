@@ -6,7 +6,6 @@
 #include "window.hpp"
 
 namespace fresub {
-
   // Exposed for tests: CPU overlap-based feasibility for 4-divisor case
   bool solve_resub_overlap_multiword(int i, int j, int k, int l, const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
   // Exposed for tests: CPU overlap-based feasibility for 0..3 divisors
@@ -17,13 +16,13 @@ namespace fresub {
   bool solve_resub_overlap_multiword_3(int i, int j, int k, const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
 
   // Exposed for tests: enumerate all feasible 4-input combinations
-  std::vector<std::vector<int>> find_feasible_4resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
+  void find_feasible_4resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets);
 
   // Exposed for tests: enumerate all feasible k-input combinations (k = 0..3)
-  std::vector<std::vector<int>> find_feasible_0resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
-  std::vector<std::vector<int>> find_feasible_1resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
-  std::vector<std::vector<int>> find_feasible_2resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
-  std::vector<std::vector<int>> find_feasible_3resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs);
+  void find_feasible_0resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets);
+  void find_feasible_1resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets);
+  void find_feasible_2resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets);
+  void find_feasible_3resub(const std::vector<std::vector<uint64_t>>& truth_tables, int num_inputs, std::vector<FeasibleSet>& out_sets);
 
   // (Note) Internal helpers for feasibility can remain in the .cpp; no header exposure needed.
 
@@ -35,13 +34,10 @@ namespace fresub {
   // For each window, try k=0,1,2,3,4 (bounded by #divisors) and stop at first non-empty set
   void feasibility_check_cpu_min(std::vector<Window>::iterator it, std::vector<Window>::iterator end);
 
-  // Existing CPU feasibility (4-input search) — kept to avoid breaking current build
-  void feasibility_check_cpu(std::vector<Window>::iterator it, std::vector<Window>::iterator end);
-
   // CUDA feasibility check with vector iterator interface (original - finds first solution)
   void feasibility_check_cuda(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
 
-  // CUDA feasibility check that finds ALL feasible combinations per window
+  // CUDA feasibility check that finds ALL feasible sets per window
   void feasibility_check_cuda_all(std::vector<Window>::iterator begin, std::vector<Window>::iterator end);
 
 } // namespace fresub
