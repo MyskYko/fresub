@@ -12,7 +12,6 @@ namespace fresub {
 
   struct FeasibleSet {
     std::vector<int> divisor_indices; // indices into window.divisors
-    std::vector<int> divisor_nodes;   // resolved node IDs for convenience
     std::vector<aigman*> synths;      // synthesized subcircuits for this set
   };
 

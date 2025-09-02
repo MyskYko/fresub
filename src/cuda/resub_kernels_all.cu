@@ -10,7 +10,6 @@ namespace fresub {
 struct aigman; // forward declaration for pointer use
 struct FeasibleSet {
     std::vector<int> divisor_indices;
-    std::vector<int> divisor_nodes;
     std::vector<aigman*> synths;
 };
 struct Window {

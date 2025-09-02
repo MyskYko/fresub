@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <iostream>
 
 #include <aig.hpp>
@@ -131,7 +132,7 @@ int main(int argc, char** argv) {
     feasibility_check_cpu_min(windows.begin(), windows.end());
   }
   
-  // Synthesis
+  // Synthesis per feasible-set and best-of-feasible selection per window
   std::vector<Result> results;
   for (auto& window : windows) {
     if (config.verbose) {
@@ -154,43 +155,93 @@ int main(int argc, char** argv) {
         std::cout << "}\n";
       }
     }
-    auto selected_divisor_indices = window.feasible_sets[0].divisor_indices; // use the first one for now
-    if (config.verbose) {
-      std::cout << "  Using first combination: {";
-      for (size_t i = 0; i < selected_divisor_indices.size(); i++) {
-	if (i > 0) std::cout << ", ";
-	std::cout << selected_divisor_indices[i];
+    // 1) For each feasible set, synthesize one circuit and store in FeasibleSet::synths
+    for (auto& fs : window.feasible_sets) {
+      // Build binary relation for this feasible set
+      std::vector<std::vector<bool>> br;
+      generate_relation(window.truth_tables, fs.divisor_indices, window.inputs.size(), br);
+
+      // Try selected synthesis engine with gate budget = mffc_size - 1
+      aigman* synthesized_aig = nullptr;
+      if (config.use_mockturtle) {
+        synthesized_aig = synthesize_circuit_mockturtle(br, window.mffc_size - 1);
+      } else {
+        synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
       }
-      std::cout << "}\n";
-    }
-    std::vector<std::vector<bool>> br;
-    generate_relation(window.truth_tables, selected_divisor_indices, window.inputs.size(), br);
-    aigman* synthesized_aig;
-    if (config.use_mockturtle) {
-      synthesized_aig = synthesize_circuit_mockturtle(br, window.mffc_size - 1);
-    } else {
-      synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
-    }
-    if (!synthesized_aig) {
-      if (config.verbose) {
-	std::cout << "  Synthesis failed: no solution found within gate limit\n";
+      if (synthesized_aig) {
+        fs.synths.push_back(synthesized_aig);
+        if (config.verbose) {
+          std::cout << "  ✓ Synthesized set {";
+          for (size_t i = 0; i < fs.divisor_indices.size(); i++) {
+            if (i) std::cout << ", ";
+            std::cout << fs.divisor_indices[i];
+          }
+          std::cout << "}: " << synthesized_aig->nGates << " gates\n";
+        }
+      } else if (config.verbose) {
+        std::cout << "  ✗ Synthesis failed for set {";
+        for (size_t i = 0; i < fs.divisor_indices.size(); i++) {
+          if (i) std::cout << ", ";
+          std::cout << fs.divisor_indices[i];
+        }
+        std::cout << "} within gate limit" << "\n";
       }
+    }
+
+    // 2) Select best-of-feasible candidate per window (smallest gates)
+    int best_fs_idx = -1;
+    int best_synth_idx = -1;
+    int best_gates = std::numeric_limits<int>::max();
+    for (size_t fi = 0; fi < window.feasible_sets.size(); ++fi) {
+      auto& fs = window.feasible_sets[fi];
+      for (size_t si = 0; si < fs.synths.size(); ++si) {
+        if (fs.synths[si] && fs.synths[si]->nGates < best_gates) {
+          best_gates = fs.synths[si]->nGates;
+          best_fs_idx = static_cast<int>(fi);
+          best_synth_idx = static_cast<int>(si);
+        }
+      }
+    }
+
+    if (best_fs_idx < 0) {
+      if (config.verbose) std::cout << "  No synthesized candidates met the gate budget\n";
+      // Clean up any failed synths (should be none), then continue
       continue;
     }
+
+    // 3) Create result for the best candidate and free the rest to avoid leaks
+    auto& best_fs = window.feasible_sets[best_fs_idx];
+    aigman* chosen = best_fs.synths[best_synth_idx];
     if (config.verbose) {
-      std::cout << "  ✓ Synthesis successful: " << synthesized_aig->nGates << " gates\n";
+      std::cout << "  → Chosen set {";
+      for (size_t i = 0; i < best_fs.divisor_indices.size(); i++) {
+        if (i) std::cout << ", ";
+        std::cout << best_fs.divisor_indices[i];
+      }
+      std::cout << "} with " << chosen->nGates << " gates\n";
     }
-    
-    // Create and return resubstitution result (to be processed later)
-    if (config.verbose) {
-      std::cout << "  ✓ Created resubstitution result for target node " 
-		<< window.target_node << "\n";
-    }
+
+    // Build selected_divisor_nodes from indices → node IDs
     std::vector<int> selected_divisor_nodes;
-    for (int idx : selected_divisor_indices) {
+    selected_divisor_nodes.reserve(best_fs.divisor_indices.size());
+    for (int idx : best_fs.divisor_indices) {
       selected_divisor_nodes.push_back(window.divisors[idx]);
     }
-    results.emplace_back(synthesized_aig, window.target_node, selected_divisor_nodes);
+    results.emplace_back(chosen, window.target_node, selected_divisor_nodes);
+
+    // Delete all other synthesized AIGs
+    for (size_t fi = 0; fi < window.feasible_sets.size(); ++fi) {
+      auto& fs = window.feasible_sets[fi];
+      for (size_t si = 0; si < fs.synths.size(); ++si) {
+        if (fi == static_cast<size_t>(best_fs_idx) && si == static_cast<size_t>(best_synth_idx)) continue;
+        if (fs.synths[si]) {
+          delete fs.synths[si];
+          fs.synths[si] = nullptr;
+        }
+      }
+      // Optionally clear to free memory; keep indices/nodes for logging/debug
+      fs.synths.clear();
+    }
   }
   
   // Process results sequentially to avoid conflicts
