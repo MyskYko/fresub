@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <cassert>
 #include <iostream>
 
 #include <aig.hpp>
@@ -132,8 +133,7 @@ int main(int argc, char** argv) {
     feasibility_check_cpu_min(windows.begin(), windows.end());
   }
   
-  // Synthesis per feasible-set and best-of-feasible selection per window
-  std::vector<Result> results;
+  // Synthesize for all feasible sets; do not pre-filter before insertion
   for (auto& window : windows) {
     if (config.verbose) {
       std::cout << "Processing window with target " << window.target_node
@@ -145,17 +145,9 @@ int main(int argc, char** argv) {
       continue;
     }
     if (config.verbose) {
-      std::cout << "  ✓ Found " << window.feasible_sets.size() << " feasible resubstitution(s):\n";
-      for (size_t combo_idx = 0; combo_idx < window.feasible_sets.size(); combo_idx++) {
-        std::cout << "    [" << combo_idx << "]: {";
-        for (size_t i = 0; i < window.feasible_sets[combo_idx].divisor_indices.size(); i++) {
-          if (i > 0) std::cout << ", ";
-          std::cout << window.feasible_sets[combo_idx].divisor_indices[i];
-        }
-        std::cout << "}\n";
-      }
+      std::cout << "  ✓ Found " << window.feasible_sets.size() << " feasible set(s)\n";
     }
-    // 1) For each feasible set, synthesize one circuit and store in FeasibleSet::synths
+    // For each feasible set, synthesize one circuit and store in FeasibleSet::synths
     for (auto& fs : window.feasible_sets) {
       // Build binary relation for this feasible set
       std::vector<std::vector<bool>> br;
@@ -168,98 +160,53 @@ int main(int argc, char** argv) {
       } else {
         synthesized_aig = synthesize_circuit(br, window.mffc_size - 1);
       }
-      if (synthesized_aig) {
-        fs.synths.push_back(synthesized_aig);
+      if (!synthesized_aig) {
         if (config.verbose) {
-          std::cout << "  ✓ Synthesized set {";
+          std::cout << "  ✗ Synthesis failed for set {";
           for (size_t i = 0; i < fs.divisor_indices.size(); i++) {
             if (i) std::cout << ", ";
             std::cout << fs.divisor_indices[i];
           }
-          std::cout << "}: " << synthesized_aig->nGates << " gates\n";
+          std::cout << "} within gate limit" << "\n";
         }
-      } else if (config.verbose) {
-        std::cout << "  ✗ Synthesis failed for set {";
+        continue;
+      }
+      int gain = window.mffc_size - synthesized_aig->nGates;
+      assert(gain > 0 && "Synthesized candidate must be beneficial (gain > 0)");
+      if (config.verbose) {
+        std::cout << "  ✓ Synthesized set {";
         for (size_t i = 0; i < fs.divisor_indices.size(); i++) {
           if (i) std::cout << ", ";
           std::cout << fs.divisor_indices[i];
         }
-        std::cout << "} within gate limit" << "\n";
+        std::cout << "}: " << synthesized_aig->nGates << " gates, gain=" << gain << "\n";
       }
-    }
-
-    // 2) Select best-of-feasible candidate per window (smallest gates)
-    int best_fs_idx = -1;
-    int best_synth_idx = -1;
-    int best_gates = std::numeric_limits<int>::max();
-    for (size_t fi = 0; fi < window.feasible_sets.size(); ++fi) {
-      auto& fs = window.feasible_sets[fi];
-      for (size_t si = 0; si < fs.synths.size(); ++si) {
-        if (fs.synths[si] && fs.synths[si]->nGates < best_gates) {
-          best_gates = fs.synths[si]->nGates;
-          best_fs_idx = static_cast<int>(fi);
-          best_synth_idx = static_cast<int>(si);
-        }
-      }
-    }
-
-    if (best_fs_idx < 0) {
-      if (config.verbose) std::cout << "  No synthesized candidates met the gate budget\n";
-      // Clean up any failed synths (should be none), then continue
-      continue;
-    }
-
-    // 3) Create result for the best candidate and free the rest to avoid leaks
-    auto& best_fs = window.feasible_sets[best_fs_idx];
-    aigman* chosen = best_fs.synths[best_synth_idx];
-    if (config.verbose) {
-      std::cout << "  → Chosen set {";
-      for (size_t i = 0; i < best_fs.divisor_indices.size(); i++) {
-        if (i) std::cout << ", ";
-        std::cout << best_fs.divisor_indices[i];
-      }
-      std::cout << "} with " << chosen->nGates << " gates\n";
-    }
-
-    // Build selected_divisor_nodes from indices → node IDs
-    std::vector<int> selected_divisor_nodes;
-    selected_divisor_nodes.reserve(best_fs.divisor_indices.size());
-    for (int idx : best_fs.divisor_indices) {
-      selected_divisor_nodes.push_back(window.divisors[idx]);
-    }
-    results.emplace_back(chosen, window.target_node, selected_divisor_nodes);
-
-    // Delete all other synthesized AIGs
-    for (size_t fi = 0; fi < window.feasible_sets.size(); ++fi) {
-      auto& fs = window.feasible_sets[fi];
-      for (size_t si = 0; si < fs.synths.size(); ++si) {
-        if (fi == static_cast<size_t>(best_fs_idx) && si == static_cast<size_t>(best_synth_idx)) continue;
-        if (fs.synths[si]) {
-          delete fs.synths[si];
-          fs.synths[si] = nullptr;
-        }
-      }
-      // Optionally clear to free memory; keep indices/nodes for logging/debug
-      fs.synths.clear();
+      fs.synths.push_back(synthesized_aig);
     }
   }
   
-  // Process results sequentially to avoid conflicts
+  // Insertion via heap over (window, feasible_set) candidates
   if (config.verbose) {
-    std::cout << "\nCollected " << results.size() << " resubstitution results\n";
-    std::cout << "Processing results sequentially...\n";
+    std::cout << "\nProcessing candidates via gain-ordered heap...\n";
   }
   Inserter inserter(aig);
-  auto applied = inserter.process_candidates_sequentially(results, config.verbose);
+  int successful_resubs = inserter.process_windows_heap(windows, config.verbose);
+
+  // Cleanup: delete any remaining synthesized AIGs to avoid leaks
+  for (auto& win : windows) {
+    for (auto& fs : win.feasible_sets) {
+      for (auto*& s : fs.synths) {
+        if (s) { delete s; s = nullptr; }
+      }
+      fs.synths.clear();
+    }
+  }
   
   // Final statistics
   auto end_time = high_resolution_clock::now();
   auto duration = duration_cast<milliseconds>(end_time - start_time);
   int final_gates = aig.nGates;
-  int successful_resubs = 0;
-  for (bool success : applied) {
-    if (success) successful_resubs++;
-  }
+  // successful_resubs already computed
   if (config.show_stats || config.verbose) {
     std::cout << "\nResubstitution complete:\n";
     std::cout << "  Windows extracted: " << windows.size() << "\n";
