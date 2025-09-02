@@ -1,5 +1,5 @@
- - batch processing (number of windows to issue at once), but we need to think about how to iterate
  - try all feasible sets of divisors to choose the best one
  - sort insertion order, probably based on gain
  - integrate mockturtle don't-care aware lookup: in mockturtle synthesis, build TT and DC from BR and use exact_library::get_supergates(tt, dc, phase, perm) instead of exhaustive DC assignments
+ - batch processing (number of windows to issue at once), but we need to think about how to iterate
  - add ODC (observability don't-care) support
