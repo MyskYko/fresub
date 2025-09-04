@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <aig.hpp>
+#include "aig_utils.hpp"
 #include <cut.hpp>
 
 
@@ -33,9 +34,6 @@ namespace fresub {
     
     void extract_all_windows(std::vector<Window>& windows);
     
-    // MFFC computation using aigman (public for testing)
-    std::unordered_set<int> compute_mffc(int root) const;
-    
     // TFO computation within window bounds (public for testing)
     std::unordered_set<int> compute_tfo_in_window(int root, const std::vector<int>& window_nodes) const;
     
@@ -47,8 +45,6 @@ namespace fresub {
     
     // Window creation from cuts
     void create_windows_from_cuts(std::vector<Window>& windows);
-    
-    void collect_mffc_recursive(int node, std::unordered_set<int>& mffc) const;
     
     // Utility functions
     bool has_external_fanout(int node, int root) const;

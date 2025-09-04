@@ -5,6 +5,7 @@
 #include <queue>
 #include <tuple>
 #include <functional>
+#include "aig_utils.hpp"
 
 namespace fresub {
 
@@ -101,9 +102,9 @@ namespace fresub {
         for (size_t si = 0; si < fs.synths.size(); ++si) {
           auto* synth = fs.synths[si];
           if (!synth) continue;
-          int gain = win.mffc_size - synth->nGates;
-          assert(gain > 0 && "Non-beneficial candidate should be filtered before insertion heap");
-          heap.push(HeapItem{gain, static_cast<int>(wi), static_cast<int>(fi), static_cast<int>(si)});
+          int estimated_gain = win.mffc_size - synth->nGates;
+          assert(estimated_gain > 0 && "Non-beneficial candidate should be filtered before insertion heap");
+          heap.push(HeapItem{estimated_gain, static_cast<int>(wi), static_cast<int>(fi), static_cast<int>(si)});
         }
       }
     }
@@ -113,6 +114,8 @@ namespace fresub {
     if (verbose) {
       std::cout << "Processing heap with " << heap.size() << " candidates...\n";
     }
+    // Reusable deref buffer for MFFC computation
+    std::vector<int> deref;
     while (!heap.empty()) {
       auto item = heap.top();
       heap.pop();
@@ -147,6 +150,16 @@ namespace fresub {
         }
       }
 
+      // Recompute current MFFC-based gain for the target node
+      // Exclude selected divisors by priming their deref counts
+      auto mffc_now = compute_mffc_excluding_divisors(aig, win.target_node, deref, selected_nodes);
+      int current_gain = static_cast<int>(mffc_now.size()) - synth->nGates;
+      if (current_gain <= 0) {
+        // No longer beneficial after prior insertions
+        skipped++;
+        continue;
+      }
+
       // Import synthesized circuit to replace target
       std::vector<int> outputs = {win.target_node << 1};
       aig.import(synth, selected_nodes, outputs);
@@ -154,7 +167,7 @@ namespace fresub {
         std::cout << "Applied candidate: target=" << win.target_node
                   << ", divs=" << selected_nodes.size()
                   << ", gates=" << synth->nGates
-                  << ", gain=" << item.gain << "\n";
+                  << ", gain=" << current_gain << "\n";
       }
       applied++;
     }

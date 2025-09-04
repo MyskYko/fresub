@@ -79,8 +79,10 @@ namespace fresub {
     }
 
     // Compute divisors = window nodes - MFFC(target) - TFO(target)
+    std::vector<int> deref; // reuse across windows
+    deref.assign(aig.nObjs, 0);
     for(auto& window: windows) {
-      std::unordered_set<int> mffc = compute_mffc(window.target_node);
+      std::unordered_set<int> mffc = compute_mffc(aig, window.target_node, deref);
       std::unordered_set<int> tfo = compute_tfo_in_window(window.target_node, window.nodes);
       for (int node : window.nodes) {
 	if (mffc.find(node) == mffc.end() && tfo.find(node) == tfo.end()) {
@@ -88,39 +90,6 @@ namespace fresub {
 	}
       }
       window.mffc_size = mffc.size();
-    }
-  }
-
-  std::unordered_set<int> WindowExtractor::compute_mffc(int root) const {
-    std::unordered_set<int> mffc;
-    if (aig.vvFanouts.empty()) {
-      aig.supportfanouts();
-    }
-    mffc.insert(root);
-    int fanin0 = lit2var(aig.vObjs[root * 2]);
-    int fanin1 = lit2var(aig.vObjs[root * 2 + 1]);
-    collect_mffc_recursive(fanin0, mffc);
-    collect_mffc_recursive(fanin1, mffc);
-    return mffc;
-  }
-
-  void WindowExtractor::collect_mffc_recursive(int node, std::unordered_set<int>& mffc) const {
-    if (node <= aig.nPis) {
-      return;
-    }
-    bool all_fanouts_in_mffc = true;
-    for (int fanout : aig.vvFanouts[node]) {
-      if (mffc.find(fanout) == mffc.end()) {
-        all_fanouts_in_mffc = false;
-        break;
-      }
-    }
-    if (all_fanouts_in_mffc) {
-      mffc.insert(node);
-      int fanin0 = lit2var(aig.vObjs[node * 2]);
-      int fanin1 = lit2var(aig.vObjs[node * 2 + 1]);
-      collect_mffc_recursive(fanin0, mffc);
-      collect_mffc_recursive(fanin1, mffc);
     }
   }
 

@@ -5,6 +5,7 @@
 #include <aig.hpp>
 
 #include "window.hpp"
+#include "aig_utils.hpp"
 
 int total_tests = 0;
 int passed_tests = 0;
@@ -137,7 +138,8 @@ void test_hardcoded_aig() {
     std::cout << "=== TESTING MFFC COMPUTATION ===\n";
     
     // Test MFFC for node 6 (should include 6,5 since 5 only feeds 6, but not 4 which feeds both 6&7)
-    auto mffc_6 = extractor.compute_mffc(6);
+    std::vector<int> deref(aig.nObjs, 0);
+    auto mffc_6 = compute_mffc(aig, 6, deref);
     std::cout << "MFFC(6): {";
     bool first = true;
     for (int node : mffc_6) {
@@ -153,7 +155,7 @@ void test_hardcoded_aig() {
     std::cout << "✓ MFFC(6) correct: {5, 6}\n";
     
     // Test MFFC for node 8 (should include all nodes since 8 is the only output)
-    auto mffc_8 = extractor.compute_mffc(8);
+    auto mffc_8 = compute_mffc(aig, 8, deref);
     std::cout << "MFFC(8): {";
     first = true;
     for (int node : mffc_8) {
@@ -227,7 +229,7 @@ void test_hardcoded_aig() {
         std::cout << "\n";
         
         // Compute MFFC and TFO for this target
-        auto mffc = extractor.compute_mffc(window.target_node);
+        auto mffc = compute_mffc(aig, window.target_node, deref);
         auto tfo = extractor.compute_tfo_in_window(window.target_node, window.nodes);
         
         // Verify divisors don't include MFFC nodes
