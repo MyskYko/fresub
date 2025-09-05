@@ -161,14 +161,19 @@ namespace fresub {
       }
 
       // Import synthesized circuit to replace target
+      int gates_before = aig.nGates;
       std::vector<int> outputs = {win.target_node << 1};
       aig.import(synth, selected_nodes, outputs);
+      int actual_gain = gates_before - aig.nGates;
       if (verbose) {
         std::cout << "Applied candidate: target=" << win.target_node
                   << ", divs=" << selected_nodes.size()
                   << ", gates=" << synth->nGates
-                  << ", gain=" << current_gain << "\n";
+                  << ", gain=" << current_gain
+                  << ", actual_gain=" << actual_gain << "\n";
       }
+      // Note: actual_gain may exceed current_gain due to constant propagation and downstream simplifications
+      assert(actual_gain >= current_gain);
       applied++;
     }
 
