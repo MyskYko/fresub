@@ -7,14 +7,7 @@
 
 namespace fresub {
 
-  Inserter::Inserter(aigman& aig) : aig(aig) {}
-
-  bool Inserter::is_node_accessible(int node) const {
-    if (node < 0 || node >= aig.nObjs) {
-      return false;
-    }
-    return aig.vDeads.empty() || !aig.vDeads[node];
-  }
+  // use is_node_accessible from aig_utils.hpp
 
   // Internal heap item for gain-based processing
   struct HeapItem {
@@ -30,7 +23,7 @@ namespace fresub {
     }
   };
 
-  int Inserter::process_windows_heap(std::vector<Window>& windows, bool verbose) const {
+  int inserter_process_windows_heap(aigman& aig, std::vector<Window>& windows, bool verbose) {
     if (verbose) {
       std::cout << "Building gain heap from windows and feasible sets...\n";
     }
@@ -70,7 +63,7 @@ namespace fresub {
       if (!synth) continue; // may have been consumed/cleaned in a prior step
 
       // Validate target and divisors still exist and are acyclic
-      if (!is_node_accessible(win.target_node)) {
+      if (!is_node_accessible(aig, win.target_node)) {
         skipped++;
         continue;
       }
@@ -78,7 +71,7 @@ namespace fresub {
       selected_nodes.reserve(fs.divisor_indices.size());
       for (int idx : fs.divisor_indices) {
         int node = win.divisors[idx];
-        if (!is_node_accessible(node)) { selected_nodes.clear(); break; }
+        if (!is_node_accessible(aig, node)) { selected_nodes.clear(); break; }
         selected_nodes.push_back(node);
       }
       if (selected_nodes.empty() && !fs.divisor_indices.empty()) {

@@ -4,12 +4,11 @@
 #include <cassert>
 #include <iostream>
 #include <unordered_map>
+#include "aig_utils.hpp"
 
 namespace fresub {
   
-  static inline int lit2var(int lit) { return lit >> 1; }
-  static inline bool is_complemented(int lit) { return lit & 1; }
-  static inline int var2lit(int var, bool comp = false) { return (var << 1) | (comp ? 1 : 0); }
+  // Use lit helpers from aig_utils.hpp
   
   std::vector<std::vector<uint64_t>> compute_truth_tables_for_window(aigman const& aig, Window const& window, bool verbose) {
 

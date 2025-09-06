@@ -8,6 +8,14 @@
 
 namespace fresub {
 
+// --- Literal helpers ---
+inline int lit2var(int lit) { return lit >> 1; }
+inline bool is_complemented(int lit) { return (lit & 1) != 0; }
+inline int var2lit(int var, bool comp = false) { return (var << 1) | (comp ? 1 : 0); }
+
+// Node accessibility helper (alive and in range)
+bool is_node_accessible(const aigman& aig, int node);
+
 // Compute the MFFC (maximum fanout-free cone) using a dereference counter array.
 // - Assumes `deref` entries are all 0 on entry; the function will restore all
 //   touched entries back to 0 before returning.

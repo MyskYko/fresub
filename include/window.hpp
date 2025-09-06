@@ -5,9 +5,7 @@
 #include <vector>
 
 #include <aig.hpp>
-#include "aig_utils.hpp"
 #include <cut.hpp>
-
 
 namespace fresub {
 
@@ -27,32 +25,10 @@ namespace fresub {
     std::vector<FeasibleSet> feasible_sets; // optional: enriched storage per feasible set
   };
 
-  // Window extraction using exopt's cut enumeration
-  class WindowExtractor {
-  public:
-    WindowExtractor(aigman& aig, int max_cut_size, bool verbose);
-    
-    void extract_all_windows(std::vector<Window>& windows);
-    
-    // TFO computation within window bounds (public for testing)
-    std::unordered_set<int> compute_tfo_in_window(int root, const std::vector<int>& window_nodes) const;
-    
-  private:
-    aigman& aig;
-    int max_cut_size;
-    bool verbose;
-    std::vector<std::vector<Cut>> cuts;
-    
-    // Window creation from cuts
-    void create_windows_from_cuts(std::vector<Window>& windows);
-    
-    // Utility functions
-    bool has_external_fanout(int node, int root) const;
-    
-    // Helper functions for aigman structure
-    inline int lit2var(int lit) const { return lit >> 1; }
-    inline bool is_complemented(int lit) const { return lit & 1; }
-    inline int var2lit(int var, bool comp = false) const { return (var << 1) | (comp ? 1 : 0); }
-  };
+  // Extract all windows using exopt's cut enumeration.
+  void window_extract_all(aigman& aig, int max_cut_size, bool verbose, std::vector<Window>& windows);
+
+  // TFO computation within window bounds (exposed for testing)
+  std::unordered_set<int> compute_tfo_in_window(aigman& aig, int root, const std::vector<int>& window_nodes);
 
 } // namespace fresub

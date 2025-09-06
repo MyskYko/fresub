@@ -268,9 +268,8 @@ void test_feasibility_with_aigman() {
     std::cout << "Created hardcoded AIG for feasibility testing\n";
     
     // Test feasibility analysis on windows
-    WindowExtractor extractor(aig, 4, true);
     std::vector<Window> windows;
-    extractor.extract_all_windows(windows);
+    window_extract_all(aig, 4, true, windows);
     ASSERT(!windows.empty());
     
     int tested_windows = 0;

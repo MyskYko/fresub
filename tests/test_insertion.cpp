@@ -165,9 +165,8 @@ void test_heap_based_insertion() {
     int initial_gates = aig.nGates;
     
     // Extract windows
-    WindowExtractor extractor(aig, 6, true);
     std::vector<Window> windows;
-    extractor.extract_all_windows(windows);
+    window_extract_all(aig, 6, true, windows);
     
     std::cout << "Extracted " << windows.size() << " windows\n";
     for (size_t i = 0; i < windows.size(); i++) {
@@ -199,8 +198,7 @@ void test_heap_based_insertion() {
     ASSERT(fabricated > 0);
     
     // Run heap-based inserter
-    Inserter inserter(aig);
-    int applied = inserter.process_windows_heap(windows, true);
+    int applied = inserter_process_windows_heap(aig, windows, true);
     std::cout << "Applied candidates: " << applied << "\n";
     ASSERT(applied > 0);
     ASSERT(aig.nGates < initial_gates);
@@ -228,4 +226,3 @@ int main() {
         return 1;
     }
 }
-

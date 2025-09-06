@@ -133,7 +133,7 @@ void test_hardcoded_aig() {
     print_aig_structure(aig);
     
     // Test MFFC and TFO for specific targets
-    WindowExtractor extractor(aig, 4, true);
+    // Extractor replaced by free functions
     
     std::cout << "=== TESTING MFFC COMPUTATION ===\n";
     
@@ -176,7 +176,7 @@ void test_hardcoded_aig() {
     
     // Test TFO for node 4 within full circuit (4 feeds 6,7 which feed 8)
     std::vector<int> all_nodes = {1, 2, 3, 4, 5, 6, 7, 8};
-    auto tfo_4 = extractor.compute_tfo_in_window(4, all_nodes);
+    auto tfo_4 = compute_tfo_in_window(aig, 4, all_nodes);
     std::cout << "TFO(4) in full circuit: {";
     first = true;
     for (int node : tfo_4) {
@@ -193,7 +193,7 @@ void test_hardcoded_aig() {
     std::cout << "✓ TFO(4) correct: {4, 6, 7, 8}\n";
     
     // Test TFO for node 5 (5 feeds 6 which feeds 8)
-    auto tfo_5 = extractor.compute_tfo_in_window(5, all_nodes);
+    auto tfo_5 = compute_tfo_in_window(aig, 5, all_nodes);
     std::cout << "TFO(5) in full circuit: {";
     first = true;
     for (int node : tfo_5) {
@@ -212,7 +212,7 @@ void test_hardcoded_aig() {
     
     // Extract windows and validate divisors
     std::vector<Window> windows;
-    extractor.extract_all_windows(windows);
+    window_extract_all(aig, 4, true, windows);
     
     std::cout << "Generated " << windows.size() << " windows:\n";
     ASSERT(!windows.empty());
@@ -230,7 +230,7 @@ void test_hardcoded_aig() {
         
         // Compute MFFC and TFO for this target
         auto mffc = compute_mffc(aig, window.target_node, deref);
-        auto tfo = extractor.compute_tfo_in_window(window.target_node, window.nodes);
+        auto tfo = compute_tfo_in_window(aig, window.target_node, window.nodes);
         
         // Verify divisors don't include MFFC nodes
         for (int divisor : window.divisors) {

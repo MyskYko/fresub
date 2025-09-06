@@ -108,9 +108,8 @@ int main(int argc, char** argv) {
   if (config.verbose) {
     std::cout << "Extracting windows with max cut size " << config.max_cut_size << "...\n";
   }
-  WindowExtractor extractor(aig, config.max_cut_size, config.verbose);
   std::vector<Window> windows;
-  extractor.extract_all_windows(windows);
+  window_extract_all(aig, config.max_cut_size, config.verbose, windows);
   if (config.verbose) {
     std::cout << "Extracted " << windows.size() << " windows\n";
   }
@@ -189,8 +188,7 @@ int main(int argc, char** argv) {
   if (config.verbose) {
     std::cout << "\nProcessing candidates via gain-ordered heap...\n";
   }
-  Inserter inserter(aig);
-  int successful_resubs = inserter.process_windows_heap(windows, config.verbose);
+  int successful_resubs = inserter_process_windows_heap(aig, windows, config.verbose);
 
   // Cleanup: delete any remaining synthesized AIGs to avoid leaks
   for (auto& win : windows) {

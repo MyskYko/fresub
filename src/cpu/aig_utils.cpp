@@ -7,6 +7,11 @@
 
 namespace fresub {
 
+bool is_node_accessible(const aigman& aig, int node) {
+  if (node < 0 || node >= aig.nObjs) return false;
+  return aig.vDeads.empty() || !aig.vDeads[node];
+}
+
 // Recursive helper for deref-based MFFC
 static void mffc_deref_dfs(aigman& aig,
                            int n,
