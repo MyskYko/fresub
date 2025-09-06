@@ -104,7 +104,7 @@ void test_aigman_import() {
     
     // Use aigman's native import to insert the synthesized circuit
     // Map synth inputs [1,2] to main nodes [3,4]
-    std::vector<int> input_mapping = {3, 4};  // Map to literals of nodes 3,4
+    std::vector<int> input_mapping = {3, 4};
     
     // We want the output to be a new node that we'll use to replace node 6
     std::vector<int> output_mapping = {12};
@@ -130,9 +130,8 @@ void test_aigman_import() {
     delete synth_aig;
 }
 
-
-void test_conflict_resolution() {
-    std::cout << "\n=== TESTING CONFLICT RESOLUTION ===\n";
+void test_heap_based_insertion() {
+    std::cout << "\n=== TESTING HEAP-BASED INSERTION ===\n";
     
     // Create AIG with multiple nodes that will have overlapping windows
     aigman aig(4, 1);  // 4 PIs, 1 PO
@@ -162,9 +161,10 @@ void test_conflict_resolution() {
     aig.nObjs = 10;
     aig.vPos[0] = 18;  // Output points to node 9
     
-    print_aig_structure(aig, "INITIAL AIG FOR CONFLICT TEST");
+    print_aig_structure(aig, "INITIAL AIG FOR HEAP TEST");
+    int initial_gates = aig.nGates;
     
-    // Extract windows - should find windows for nodes 5, 6, 7, 8, 9
+    // Extract windows
     WindowExtractor extractor(aig, 6, true);
     std::vector<Window> windows;
     extractor.extract_all_windows(windows);
@@ -172,83 +172,40 @@ void test_conflict_resolution() {
     std::cout << "Extracted " << windows.size() << " windows\n";
     for (size_t i = 0; i < windows.size(); i++) {
         std::cout << "  Window " << i << ": target=" << windows[i].target_node 
-                  << ", divisors=" << windows[i].divisors.size() << "\n";
+                  << ", divisors=" << windows[i].divisors.size() 
+                  << ", mffc_size=" << windows[i].mffc_size << "\n";
     }
     
-    // Test inserter with resubstitution results
-    Inserter inserter(aig);
-    
-    // Create resubstitution results from windows with divisors
-    std::vector<Result> results;
-    std::cout << "\nCreating resubstitution results:\n";
-    for (size_t i = 0; i < windows.size(); i++) {
-        if (windows[i].divisors.size() >= 2) {
-            // Select first 2 divisors as selected divisor nodes
-            std::vector<int> selected_nodes = {windows[i].divisors[0], windows[i].divisors[1]};
-            
-            // Create a simple synthesized subcircuit (mock synthesis)
-            aigman* synth_aig = new aigman(2, 1);  // 2 inputs, 1 output
+    // Fabricate feasible sets and synthesized circuits for some windows
+    int fabricated = 0;
+    for (auto& w : windows) {
+        if (w.divisors.size() >= 2 && w.mffc_size >= 2) {
+            FeasibleSet fs;
+            fs.divisor_indices = {0, 1}; // use first two divisors
+            // Create a tiny synthesized subcircuit with 1 gate (< mffc_size)
+            aigman* synth_aig = new aigman(2, 1);
             synth_aig->vObjs.resize(4 * 2);
-            // Node 3 = AND(1, 2) - simple implementation using both inputs
-            synth_aig->vObjs[3 * 2] = 2;
+            synth_aig->vObjs[3 * 2] = 2;  // AND(1,2)
             synth_aig->vObjs[3 * 2 + 1] = 4;
             synth_aig->nGates = 1;
             synth_aig->nObjs = 4;
-            synth_aig->vPos[0] = 6;  // Output is node 3
-            
-            results.emplace_back(synth_aig, windows[i].target_node, selected_nodes);
-            std::cout << "  Result " << results.size()-1 << ": target=" << windows[i].target_node 
-                      << ", divisors=[" << selected_nodes[0] << "," << selected_nodes[1] << "]\n";
+            synth_aig->vPos[0] = 6;
+            fs.synths.push_back(synth_aig);
+            w.feasible_sets.push_back(std::move(fs));
+            fabricated++;
         }
     }
+    std::cout << "Fabricated " << fabricated << " candidate(s) across windows\n";
+    ASSERT(fabricated > 0);
     
-    // Check initial validity of results
-    std::cout << "\nInitial candidate validity:\n";
-    for (size_t i = 0; i < results.size(); i++) {
-        bool valid = inserter.is_candidate_valid(results[i]);
-        std::cout << "  Result " << i << " (target " << results[i].target_node << "): " 
-                  << (valid ? "VALID" : "INVALID") << "\n";
-        ASSERT(valid);  // All should be valid initially
-    }
-    
-    // Simulate replacing node 5 - this should invalidate windows targeting node 5
-    // and any windows that depend on node 5
-    std::cout << "\nSimulating replacement of node 5...\n";
-    aig.replacenode(5, 2);  // Replace node 5 with input 1 (literal 2)
-    
-    print_aig_structure(aig, "AIG AFTER REPLACING NODE 5");
-    
-    // Check candidate validity after replacement
-    std::cout << "\nResult validity after node 5 replacement:\n";
-    int valid_count = 0, invalid_count = 0;
-    for (size_t i = 0; i < results.size(); i++) {
-        bool valid = inserter.is_candidate_valid(results[i]);
-        std::cout << "  Result " << i << " (target " << results[i].target_node << "): " 
-                  << (valid ? "VALID" : "INVALID") << "\n";
-        if (valid) valid_count++;
-        else invalid_count++;
-    }
-    
-    ASSERT(invalid_count > 0);  // Some results should become invalid
-    std::cout << "✓ Conflict resolution correctly identified " << invalid_count 
-              << " invalid results out of " << results.size() << " total\n";
-    
-    // Test sequential processing of results
-    std::cout << "\nTesting sequential result processing:\n";
-    auto applied_results = inserter.process_candidates_sequentially(results, true); // verbose for tests
-    
-    int applied = 0, skipped = 0;
-    for (bool success : applied_results) {
-        if (success) applied++;
-        else skipped++;
-    }
-    
-    ASSERT(applied + skipped == static_cast<int>(results.size()));
-    ASSERT(applied > 0);  // At least some should be applied
-    ASSERT(skipped >= invalid_count);  // At least the initially invalid ones should be skipped
-    
-    std::cout << "✓ Sequential processing correctly applied " << applied 
-              << " and skipped " << skipped << " results\n";
+    // Run heap-based inserter
+    Inserter inserter(aig);
+    int applied = inserter.process_windows_heap(windows, true);
+    std::cout << "Applied candidates: " << applied << "\n";
+    ASSERT(applied > 0);
+    ASSERT(aig.nGates < initial_gates);
+    std::cout << "✓ Heap-based insertion reduced gates from " << initial_gates 
+              << " to " << aig.nGates << "\n";
 }
 
 int main() {
@@ -257,7 +214,7 @@ int main() {
     std::cout << "========================================\n\n";
     
     test_aigman_import();
-    test_conflict_resolution();
+    test_heap_based_insertion();
     
     std::cout << "========================================\n";
     std::cout << "         TEST RESULTS SUMMARY          \n";
@@ -271,3 +228,4 @@ int main() {
         return 1;
     }
 }
+
